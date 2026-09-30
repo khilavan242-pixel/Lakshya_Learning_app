@@ -1,28 +1,29 @@
 import 'package:flutter/material.dart';
-import 'doc_store.dart';
+import 'app_store.dart';
+import 'core_audio_models.dart';
 import 'home_screen.dart';
-import 'speech_service.dart';
+import 'math_game.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await DocStore.root();
-  await AppKV.open();
-  // Initialize your new speech service if it requires an init call
-  // await Speaker.instance.init(); 
-  runApp(const KidsLearningTVApp());
+  await GameAudioService.instance.init();
+  await CardStore.init(); // also moves old SharedPreferences data into the Documents folder
+  await MathStore.init();
+  runApp(const KidsSuperApp());
 }
 
-class KidsLearningTVApp extends StatelessWidget {
-  const KidsLearningTVApp({super.key});
-
+class KidsSuperApp extends StatelessWidget {
+  const KidsSuperApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Kids Learning TV',
+      title: 'Kids Super Learning',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0D1322),
+        useMaterial3: true,
+        colorSchemeSeed: Colors.deepPurple,
+        scaffoldBackgroundColor: Colors.transparent,
       ),
       home: const HomeScreen(),
     );
