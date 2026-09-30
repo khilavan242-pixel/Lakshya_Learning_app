@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'doc_store.dart';
 import 'core_audio_models.dart';
 
 /// Single place that reads/writes everything the TV app saves.
@@ -24,7 +24,7 @@ class CardStore {
   static Map<String, Map<String, int>> stats = {};
 
   static Future<void> init() async {
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     keySoundOn = p.getBool(_soundKey) ?? true;
     ttsOn = p.getBool(_ttsKey) ?? true;
 
@@ -47,7 +47,7 @@ class CardStore {
 
   // ---------------------------------------------------------------- cards
   static Future<List<WordCard>> loadCards() async {
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     if (!p.containsKey(_cardsKey)) {
       // First run: seed the starter words so they can be managed from the phone too.
       final defaults = <WordCard>[
@@ -69,7 +69,7 @@ class CardStore {
   }
 
   static Future<void> saveCards(List<WordCard> cards) async {
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     await p.setStringList(_cardsKey, cards.map((c) => c.toJson()).toList());
   }
 
@@ -116,7 +116,7 @@ class CardStore {
 
   // ----------------------------------------------------------- categories
   static Future<List<String>> _customCategories() async {
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     return p.getStringList(_catsKey) ?? [];
   }
 
@@ -130,14 +130,14 @@ class CardStore {
   }
 
   static Future<void> addCategory(String name) async {
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     final cats = await _customCategories();
     if (!cats.contains(name)) cats.add(name);
     await p.setStringList(_catsKey, cats);
   }
 
   static Future<void> renameCategory(String from, String to) async {
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     final cards = await loadCards();
     final renamed = cards
         .map((c) => c.topic == from
@@ -155,7 +155,7 @@ class CardStore {
   /// Words of a deleted category are moved to MIXED (nothing is lost).
   static Future<void> deleteCategory(String name) async {
     await renameCategory(name, 'MIXED');
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     final cats = await _customCategories();
     cats.remove(name);
     await p.setStringList(_catsKey, cats);
@@ -169,7 +169,7 @@ class CardStore {
     } else {
       pronunciations[word] = t;
     }
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     await p.setString(_pronKey, json.encode(pronunciations));
   }
 
@@ -180,26 +180,26 @@ class CardStore {
     if (correct) s['c'] = (s['c'] ?? 0) + 1;
     if (wrong) s['w'] = (s['w'] ?? 0) + 1;
     if (hint) s['h'] = (s['h'] ?? 0) + 1;
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     await p.setString(_statsKey, json.encode(stats));
   }
 
   static Future<void> resetStats() async {
     stats = {};
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     await p.remove(_statsKey);
   }
 
   // ------------------------------------------------------------ settings
   static Future<void> setKeySound(bool v) async {
     keySoundOn = v;
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     await p.setBool(_soundKey, v);
   }
 
   static Future<void> setTts(bool v) async {
     ttsOn = v;
-    final p = await SharedPreferences.getInstance();
+    final p = await AppKV.open();
     await p.setBool(_ttsKey, v);
   }
 
