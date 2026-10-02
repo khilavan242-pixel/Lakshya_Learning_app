@@ -5,111 +5,15 @@ import 'app_store.dart';
 import 'core_audio_models.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
+import 'math_data.dart';
+import 'players.dart';
 import 'speech_service.dart';
 
 // ======================================================================
 // MATHS GAME  (grades, topics, math test, daily challenge, report card,
-// child profiles, settings)  - data saved in <Documents>/KidsSuperApp/math
+// players, settings)  - data saved in <Documents>/KidsSuperApp
 // ======================================================================
 
-class MathTopic {
-  final String id;
-  final String name;
-  final String emoji;
-  final List<Color> colors;
-  const MathTopic(this.id, this.name, this.emoji, this.colors);
-}
-
-const List<MathTopic> kMathTopics = <MathTopic>[
-  MathTopic('counting', 'Counting', '🔢', <Color>[Color(0xFF26C6DA), Color(0xFF00838F)]),
-  MathTopic('addition', 'Addition', '➕', <Color>[Color(0xFFAB47BC), Color(0xFF6A1B9A)]),
-  MathTopic('subtraction', 'Subtraction', '➖', <Color>[Color(0xFFFF7043), Color(0xFFD84315)]),
-  MathTopic('multiplication', 'Multiplication', '✖️', <Color>[Color(0xFF9CCC65), Color(0xFF558B2F)]),
-  MathTopic('division', 'Division', '➗', <Color>[Color(0xFFFFB300), Color(0xFFEF6C00)]),
-  MathTopic('fractions', 'Fractions', '🍕', <Color>[Color(0xFF42A5F5), Color(0xFF1565C0)]),
-  MathTopic('time', 'Time & Clock', '⏰', <Color>[Color(0xFF7E57C2), Color(0xFF4527A0)]),
-  MathTopic('decimals', 'Decimals', '🔟', <Color>[Color(0xFFEC407A), Color(0xFFAD1457)]),
-  MathTopic('squareroot', 'Square Root', '√', <Color>[Color(0xFF78909C), Color(0xFF37474F)]),
-  MathTopic('exponents', 'Exponents', '⚡', <Color>[Color(0xFF26A69A), Color(0xFF00695C)]),
-  MathTopic('algebra', 'Algebra', '🔤', <Color>[Color(0xFF5C6BC0), Color(0xFF283593)]),
-  MathTopic('mixed', 'Mixed Operations', '🎲', <Color>[Color(0xFF8D6E63), Color(0xFF4E342E)]),
-  MathTopic('fun', 'Fun Math', '🎈', <Color>[Color(0xFFBA68C8), Color(0xFF8E24AA)]),
-  MathTopic('geometry', 'Geometry', '📐', <Color>[Color(0xFFFF8A65), Color(0xFFE64A19)]),
-  MathTopic('percentage', 'Percentage', '％', <Color>[Color(0xFF66BB6A), Color(0xFF2E7D32)]),
-];
-
-const List<String> kGradeNames = <String>[
-  'Kindergarten',
-  'Grade 1',
-  'Grade 2',
-  'Grade 3',
-  'Grade 4',
-  'Grade 5',
-  'Grade 6',
-];
-
-const List<String> kGradeShort = <String>['K', '1', '2', '3', '4', '5', '6'];
-
-const Map<int, List<String>> kGradeTopics = <int, List<String>>{
-  0: <String>['counting', 'addition', 'subtraction', 'time', 'fun', 'geometry'],
-  1: <String>['counting', 'addition', 'subtraction', 'time', 'fun', 'geometry', 'mixed'],
-  2: <String>['addition', 'subtraction', 'multiplication', 'division', 'time', 'fractions', 'fun', 'geometry', 'mixed'],
-  3: <String>['addition', 'subtraction', 'multiplication', 'division', 'fractions', 'time', 'decimals', 'geometry', 'fun', 'mixed'],
-  4: <String>['multiplication', 'division', 'fractions', 'decimals', 'percentage', 'geometry', 'time', 'exponents', 'fun', 'mixed'],
-  5: <String>['fractions', 'decimals', 'percentage', 'exponents', 'squareroot', 'algebra', 'geometry', 'fun', 'mixed'],
-  6: <String>['fractions', 'decimals', 'percentage', 'exponents', 'squareroot', 'algebra', 'geometry', 'fun', 'mixed'],
-};
-
-MathTopic mathTopicById(String id) {
-  for (final t in kMathTopics) {
-    if (t.id == id) return t;
-  }
-  return kMathTopics[0];
-}
-
-// ----------------------------------------------------------------------
-// QUESTION + GENERATOR
-// ----------------------------------------------------------------------
-class MathQuestion {
-  final String topicId;
-  final String text;
-  final String spokenEn;
-  final String spokenHi;
-  final String answer;
-  final List<String> options;
-  final int? clockHour;
-  final int? clockMinute;
-  final String? emoji;
-  final int emojiCount;
-
-  const MathQuestion({
-    required this.topicId,
-    required this.text,
-    required this.spokenEn,
-    required this.spokenHi,
-    required this.answer,
-    required this.options,
-    this.clockHour,
-    this.clockMinute,
-    this.emoji,
-    this.emojiCount = 0,
-  });
-
-  MathQuestion withTopic(String id) {
-    return MathQuestion(
-      topicId: id,
-      text: text,
-      spokenEn: spokenEn,
-      spokenHi: spokenHi,
-      answer: answer,
-      options: options,
-      clockHour: clockHour,
-      clockMinute: clockMinute,
-      emoji: emoji,
-      emojiCount: emojiCount,
-    );
-  }
-}
 
 class MathEngine {
   final math.Random rnd;
@@ -554,99 +458,81 @@ class MathEngine {
 }
 
 // ----------------------------------------------------------------------
-// STORAGE: profiles, progress and settings
+// STORAGE: maths report card (per player). Settings live in PlayerStore.
 // ----------------------------------------------------------------------
 class MathStore {
-  static List<Map<String, String>> children = <Map<String, String>>[
-    <String, String>{'id': 'c1', 'name': 'Player 1'}
-  ];
-  static String activeId = 'c1';
   static Map<String, dynamic> progress = <String, dynamic>{};
 
-  // settings (kept in app_kv.json)
-  static bool sound = true;
-  static bool autoSpeak = true;
-  static bool retries = true;
-  static int optionCount = 4;
-  static int questionCount = 10;
-  static String lang = 'en';
-  static int lastGrade = 1;
+  static Player get _p => PlayerStore.active;
+
+  // ---- settings of the active player (saved by PlayerStore) ----
+  static bool get sound => _p.sound;
+  static set sound(bool v) {
+    _p.sound = v;
+    PlayerStore.save();
+  }
+
+  static bool get autoSpeak => _p.speak;
+  static set autoSpeak(bool v) {
+    _p.speak = v;
+    PlayerStore.save();
+  }
+
+  static bool get retries => _p.retries;
+  static set retries(bool v) {
+    _p.retries = v;
+    PlayerStore.save();
+  }
+
+  static bool get hints => _p.hints;
+  static bool get smart => _p.smart;
+
+  static int get optionCount => _p.options;
+  static set optionCount(int v) {
+    _p.options = v;
+    PlayerStore.save();
+  }
+
+  static int get questionCount => _p.rounds;
+  static set questionCount(int v) {
+    _p.rounds = v;
+    PlayerStore.save();
+  }
+
+  static String get lang => _p.lang;
+  static set lang(String v) {
+    _p.lang = v;
+    PlayerStore.save();
+  }
+
+  static int get lastGrade => _p.grade;
+  static set lastGrade(int v) {
+    _p.grade = v;
+    PlayerStore.save();
+  }
+
+  static String get activeId => PlayerStore.activeId;
+  static String get activeName => _p.name;
+
+  /// Keeps only the topics this child is allowed to play (falls back to all).
+  static List<String> allowedTopicIds(Iterable<String> ids) {
+    final allowed = _p.mathTopics;
+    final list = ids.toList();
+    if (allowed == null) return list;
+    final filtered = list.where((String t) => allowed.contains(t)).toList();
+    return filtered.isEmpty ? list : filtered;
+  }
 
   static Future<void> init() async {
-    final kv = await AppKV.open();
-    sound = kv.getBool('math_sound') ?? true;
-    autoSpeak = kv.getBool('math_autospeak') ?? true;
-    retries = kv.getBool('math_retries') ?? true;
-    optionCount = int.tryParse(kv.getString('math_options') ?? '') ?? 4;
-    questionCount = int.tryParse(kv.getString('math_count') ?? '') ?? 10;
-    lang = kv.getString('math_lang') ?? 'en';
-    lastGrade = int.tryParse(kv.getString('math_grade') ?? '') ?? 1;
-
-    final prof = await DocStore.readJson('math', 'profiles.json');
-    if (prof is Map) {
-      final list = prof['children'];
-      if (list is List && list.isNotEmpty) {
-        children = <Map<String, String>>[];
-        for (final c in list) {
-          if (c is Map) {
-            children.add(<String, String>{'id': (c['id'] ?? '').toString(), 'name': (c['name'] ?? 'Player').toString()});
-          }
-        }
-      }
-      activeId = (prof['active'] ?? children.first['id']).toString();
-    }
-    if (children.isEmpty) {
-      children = <Map<String, String>>[
-        <String, String>{'id': 'c1', 'name': 'Player 1'}
-      ];
-    }
-    if (!children.any((Map<String, String> c) => c['id'] == activeId)) activeId = children.first['id'] ?? 'c1';
     final prog = await DocStore.readJson('math', 'progress.json');
     if (prog is Map) progress = Map<String, dynamic>.from(prog);
   }
 
-  static Future<void> saveSetting(String key, String value) async {
-    final kv = await AppKV.open();
-    await kv.setString(key, value);
-  }
-
-  static Future<void> saveBool(String key, bool value) async {
-    final kv = await AppKV.open();
-    await kv.setBool(key, value);
-  }
-
-  static String get activeName {
-    for (final c in children) {
-      if (c['id'] == activeId) return c['name'] ?? 'Player';
-    }
-    return 'Player';
-  }
-
-  static Future<void> _saveProfiles() =>
-      DocStore.writeJson('math', 'profiles.json', <String, dynamic>{'children': children, 'active': activeId});
+  // Old call sites: settings are now saved automatically by the setters above.
+  static Future<void> saveSetting(String key, String value) async {}
+  static Future<void> saveBool(String key, bool value) async {}
 
   static Future<void> _saveProgress() => DocStore.writeJson('math', 'progress.json', progress);
-
-  static Future<void> addChild(String name) async {
-    final id = 'c${DateTime.now().millisecondsSinceEpoch}';
-    children.add(<String, String>{'id': id, 'name': name});
-    activeId = id;
-    await _saveProfiles();
-  }
-
-  static Future<void> setActive(String id) async {
-    activeId = id;
-    await _saveProfiles();
-  }
-
-  static Future<void> deleteChild(String id) async {
-    if (children.length <= 1) return;
-    children.removeWhere((Map<String, String> c) => c['id'] == id);
-    progress.remove(id);
-    if (activeId == id) activeId = children.first['id'] ?? 'c1';
-    await _saveProfiles();
-    await _saveProgress();
-  }
 
   static Map<String, dynamic> _childData() {
     final existing = progress[activeId];
@@ -680,10 +566,10 @@ class MathStore {
     await _saveProgress();
   }
 
-  static String todayKey() {
-    final n = DateTime.now();
-    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
-  }
+  static String _dayKey(DateTime n) =>
+      '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+
+  static String todayKey() => _dayKey(DateTime.now());
 
   static Map<String, dynamic> daily() {
     final data = _childData();
@@ -699,8 +585,7 @@ class MathStore {
     final d = daily();
     final today = todayKey();
     if (d['last'] == today) return;
-    final y = DateTime.now().subtract(const Duration(days: 1));
-    final yKey = '${y.year}-${y.month.toString().padLeft(2, '0')}-${y.day.toString().padLeft(2, '0')}';
+    final yKey = _dayKey(DateTime.now().subtract(const Duration(days: 1)));
     final streak = d['last'] == yKey ? ((d['streak'] ?? 0) as num).toInt() + 1 : 1;
     data['_daily'] = <String, dynamic>{'last': today, 'streak': streak};
     await _saveProgress();
@@ -737,12 +622,15 @@ class _MathHomeScreenState extends State<MathHomeScreen> {
   void _setGrade(int g) {
     setState(() => _grade = g);
     MathStore.lastGrade = g;
-    MathStore.saveSetting('math_grade', g.toString());
   }
 
   Future<void> _open(Widget screen) async {
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen));
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        _grade = MathStore.lastGrade.clamp(0, 6).toInt();
+      });
+    }
   }
 
   void _play(String topicId, String mode) {
@@ -752,7 +640,8 @@ class _MathHomeScreenState extends State<MathHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final s = uiScale(context);
-    final topicIds = _tab == 0 ? (kGradeTopics[_grade] ?? <String>[]) : kMathTopics.map((MathTopic t) => t.id).toList();
+    final baseIds = _tab == 0 ? (kGradeTopics[_grade] ?? <String>[]) : kMathTopics.map((MathTopic t) => t.id).toList();
+    final topicIds = MathStore.allowedTopicIds(baseIds);
 
     final tiles = <Widget>[];
     for (var i = 0; i < topicIds.length; i++) {
@@ -784,16 +673,16 @@ class _MathHomeScreenState extends State<MathHomeScreen> {
         ActionButton(
           s: s,
           icon: Icons.face_rounded,
-          label: MathStore.activeName,
+          label: '${PlayerStore.active.emoji} ${MathStore.activeName}',
           color: const Color(0xFF26A69A),
-          onPressed: () => _open(const MathProfilesScreen()),
+          onPressed: () => _open(const PlayersScreen()),
         ),
         SizedBox(width: 12 * s),
         ActionButton(
           s: s,
           icon: Icons.settings_rounded,
           color: const Color(0xFF78909C),
-          onPressed: () => _open(const MathSettingsScreen()),
+          onPressed: () => _open(const PlayerSettingsScreen(home: true)),
         ),
       ],
       body: Column(
@@ -830,9 +719,16 @@ class _MathHomeScreenState extends State<MathHomeScreen> {
           ),
           Wrap(
             alignment: WrapAlignment.center,
-            spacing: 16 * s,
+            spacing: 14 * s,
             runSpacing: 8 * s,
             children: [
+              ActionButton(
+                s: s,
+                icon: Icons.psychology_rounded,
+                label: 'Smart Practice${MathReview.count > 0 ? ' (${MathReview.count})' : ''}',
+                color: const Color(0xFF00897B),
+                onPressed: () => _play('', 'smart'),
+              ),
               ActionButton(
                 s: s,
                 icon: Icons.calendar_month_rounded,
@@ -863,21 +759,29 @@ class _MathHomeScreenState extends State<MathHomeScreen> {
 }
 
 // ----------------------------------------------------------------------
-// PLAY SCREEN
+// PLAY SCREEN  (modes: practice | test | daily | smart)
+// Wrong answers and hints are remembered: the question comes back a few
+// questions later, and again in Smart Practice, until it is answered
+// correctly twice in a row.
 // ----------------------------------------------------------------------
 class MathPlayScreen extends StatefulWidget {
-  final String topicId; // '' for test / daily
+  final String topicId; // '' for test / daily / smart
   final int grade;
-  final String mode; // practice | test | daily
+  final String mode;
   const MathPlayScreen({super.key, required this.topicId, required this.grade, required this.mode});
   @override
   State<MathPlayScreen> createState() => _MathPlayScreenState();
 }
 
 class _MathPlayScreenState extends State<MathPlayScreen> {
-  late final List<MathQuestion> _questions;
+  List<MathQuestion> _questions = <MathQuestion>[];
+  List<bool> _isRepeat = <bool>[];
+  final Map<String, int> _repeatCount = <String, int>{};
+  int _baseCount = 0;
+  bool _ready = false;
   int _index = 0;
   int _correct = 0;
+  int _needPractice = 0;
   bool _locked = false;
   bool _firstTry = true;
   bool _finished = false;
@@ -891,7 +795,14 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
   @override
   void initState() {
     super.initState();
-    _questions = _buildQuestions();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await MathReview.ensure(PlayerStore.activeId);
+    _setupSession();
+    if (!mounted) return;
+    setState(() => _ready = true);
     _speakCurrent();
   }
 
@@ -901,37 +812,121 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
     super.dispose();
   }
 
+  void _setupSession() {
+    _questions = _buildQuestions();
+    _isRepeat = List<bool>.filled(_questions.length, false);
+    _repeatCount.clear();
+    _baseCount = _questions.length;
+    _index = 0;
+    _correct = 0;
+    _needPractice = 0;
+    _resetQuestionState();
+  }
+
+  void _resetQuestionState() {
+    _locked = false;
+    _firstTry = true;
+    _pickedRight = -1;
+    _wrongIdx.clear();
+    _token++;
+    _message = (_isRepeat.isNotEmpty && _index < _isRepeat.length && _isRepeat[_index]) ? '🔁 Let\'s try this one again!' : '';
+  }
+
   List<MathQuestion> _buildQuestions() {
     final now = DateTime.now();
     final seed = widget.mode == 'daily'
         ? now.year * 10000 + now.month * 100 + now.day + MathStore.activeId.codeUnits.fold<int>(0, (int a, int b) => (a * 31 + b) % 1000)
         : DateTime.now().microsecondsSinceEpoch;
-    final engine = MathEngine(math.Random(seed), MathStore.optionCount);
+    final rnd = math.Random(seed);
+    final engine = MathEngine(rnd, MathStore.optionCount);
     final count = widget.mode == 'daily' ? 5 : MathStore.questionCount;
-    final topics = (widget.mode == 'practice')
-        ? <String>[widget.topicId]
-        : List<String>.from((kGradeTopics[widget.grade] ?? <String>['addition']).where((String t) => t != 'mixed'));
+    final gradeTopics = MathStore.allowedTopicIds(kGradeTopics[widget.grade] ?? <String>['addition']);
+    var pool = gradeTopics.where((String t) => t != 'mixed').toList();
+    if (pool.isEmpty) pool = gradeTopics;
+    if (widget.mode == 'practice') pool = <String>[widget.topicId];
+
     final out = <MathQuestion>[];
     final seen = <String>{};
+    void addUnique(MathQuestion q) {
+      if (seen.add('${q.topicId}|${q.text}')) out.add(q);
+    }
+
+    // questions the child struggled with come first (smart practice, or a few in normal practice)
+    if (widget.mode == 'smart') {
+      for (final q in MathReview.due((count / 2).ceil())) {
+        addUnique(q);
+      }
+    } else if (widget.mode == 'practice' && MathStore.smart) {
+      for (final q in MathReview.due(30).where((MathQuestion mq) => mq.topicId == widget.topicId).take(3)) {
+        addUnique(q);
+      }
+    }
+
+    // weak topics are picked more often in smart practice
+    final weights = <double>[];
+    for (final t in pool) {
+      final st = MathStore.topicStats(t);
+      final a = ((st['a'] ?? 0) as num).toInt();
+      final c = ((st['c'] ?? 0) as num).toInt();
+      final acc = a == 0 ? 0.5 : c / a;
+      weights.add(widget.mode == 'smart' ? 1 + (1 - acc) * 3 : 1.0);
+    }
+    final totalWeight = weights.fold<double>(0, (double a, double b) => a + b);
+
     var guard = 0;
     while (out.length < count && guard < count * 30) {
       guard++;
-      final t = topics[out.length % topics.length];
-      final q = engine.make(t, widget.grade);
-      if (seen.add('${q.topicId}|${q.text}')) out.add(q);
+      String t;
+      if (widget.mode == 'smart') {
+        var r = rnd.nextDouble() * totalWeight;
+        var idx = 0;
+        for (var i = 0; i < weights.length; i++) {
+          r -= weights[i];
+          if (r <= 0) {
+            idx = i;
+            break;
+          }
+        }
+        t = pool[idx];
+      } else {
+        t = pool[out.length % pool.length];
+      }
+      addUnique(engine.make(t, widget.grade));
     }
+    out.shuffle(rnd);
     return out;
   }
 
   void _speakCurrent() {
-    if (!MathStore.autoSpeak) return;
+    if (!MathStore.autoSpeak || _questions.isEmpty) return;
     _sayQuestion();
   }
 
   void _sayQuestion() {
+    if (_questions.isEmpty) return;
     final q = _questions[_index];
     final hi = MathStore.lang == 'hi';
     Speaker.instance.speak(hi ? q.spokenHi : q.spokenEn, lang: hi ? 'hi' : 'en');
+  }
+
+  /// Called once per question when it is finished. clean = right first time, no hint.
+  void _resolve(bool clean) {
+    final q = _questions[_index];
+    MathStore.recordAnswer(q.topicId, clean);
+    MathReview.result(q, clean);
+    if (clean) {
+      if (!_isRepeat[_index]) _correct++;
+    } else {
+      _needPractice++;
+      final key = '${q.topicId}|${q.text}';
+      final used = _repeatCount[key] ?? 0;
+      if (used < 2) {
+        _repeatCount[key] = used + 1;
+        final at = math.min(_questions.length, _index + 4);
+        _questions.insert(at, q);
+        _isRepeat.insert(at, true);
+      }
+    }
   }
 
   void _choose(int i) {
@@ -942,14 +937,13 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
     final token = _token;
     if (q.options[i] == q.answer) {
       _mathSfx(true);
-      if (_firstTry) _correct++;
-      MathStore.recordAnswer(q.topicId, _firstTry);
+      _resolve(_firstTry);
       setState(() {
         _locked = true;
         _pickedRight = i;
-        _message = '🎉 Correct!';
+        _message = _firstTry ? '🎉 Correct!' : '👍 Good! Remember: ${q.answer}';
       });
-      Future<void>.delayed(const Duration(milliseconds: 1000), () {
+      Future<void>.delayed(Duration(milliseconds: _firstTry ? 1000 : 1800), () {
         if (mounted && token == _token) _next();
       });
     } else {
@@ -961,19 +955,41 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
           _message = 'Try again 🙂';
         });
       } else {
-        MathStore.recordAnswer(q.topicId, false);
+        _firstTry = false;
+        _resolve(false);
         setState(() {
           _wrongIdx.add(i);
           _locked = true;
-          _firstTry = false;
           _pickedRight = q.options.indexOf(q.answer);
           _message = 'The answer is ${q.answer}';
         });
-        Future<void>.delayed(const Duration(milliseconds: 1800), () {
+        Future<void>.delayed(const Duration(milliseconds: 2200), () {
           if (mounted && token == _token) _next();
         });
       }
     }
+  }
+
+  void _hint() {
+    if (_locked || _finished || !MathStore.hints) return;
+    final q = _questions[_index];
+    var wrongLeft = 0;
+    var target = -1;
+    for (var i = 0; i < q.options.length; i++) {
+      if (q.options[i] != q.answer && !_wrongIdx.contains(i)) {
+        wrongLeft++;
+        if (target < 0) target = i;
+      }
+    }
+    if (target < 0 || wrongLeft <= 1) {
+      setState(() => _message = '💡 The answer is one of the last options!');
+      return;
+    }
+    setState(() {
+      _wrongIdx.add(target);
+      _firstTry = false;
+      _message = '💡 That one is not the answer';
+    });
   }
 
   void _next() {
@@ -983,18 +999,13 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
     }
     setState(() {
       _index++;
-      _token++;
-      _locked = false;
-      _firstTry = true;
-      _pickedRight = -1;
-      _wrongIdx.clear();
-      _message = '';
+      _resetQuestionState();
     });
     _speakCurrent();
   }
 
   int _stars() {
-    final ratio = _total == 0 ? 0.0 : _correct / _total;
+    final ratio = _baseCount == 0 ? 0.0 : _correct / _baseCount;
     if (ratio >= 0.9) return 3;
     if (ratio >= 0.6) return 2;
     if (ratio >= 0.3) return 1;
@@ -1014,30 +1025,20 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
 
   void _restart() {
     setState(() {
-      _questions
-        ..clear()
-        ..addAll(_buildQuestions());
-      _index = 0;
-      _correct = 0;
-      _locked = false;
-      _firstTry = true;
       _finished = false;
-      _pickedRight = -1;
-      _wrongIdx.clear();
-      _message = '';
-      _token++;
+      _setupSession();
     });
     _speakCurrent();
   }
 
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent || !_ready) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.f1 || event.logicalKey == LogicalKeyboardKey.colorF2Yellow) {
       if (!_finished) _sayQuestion();
       return KeyEventResult.handled;
     }
     final ch = event.character;
-    if (ch != null && ch.length == 1 && !_finished) {
+    if (ch != null && ch.length == 1 && !_finished && _questions.isNotEmpty) {
       final n = int.tryParse(ch);
       if (n != null && n >= 1 && n <= _questions[_index].options.length) {
         _choose(n - 1);
@@ -1049,6 +1050,7 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
 
   String get _title {
     if (widget.mode == 'daily') return '📅 Daily Challenge';
+    if (widget.mode == 'smart') return '🧠 Smart Practice';
     if (widget.mode == 'test') return '📝 Math Test • ${kGradeNames[widget.grade]}';
     final t = mathTopicById(widget.topicId);
     return '${t.emoji} ${t.name} • ${kGradeNames[widget.grade]}';
@@ -1058,6 +1060,13 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
   Widget build(BuildContext context) {
     final s = uiScale(context);
     final size = MediaQuery.of(context).size;
+
+    if (!_ready) {
+      return ScreenFrame(title: _title, body: const Center(child: CircularProgressIndicator(color: Colors.white)));
+    }
+    if (_questions.isEmpty) {
+      return ScreenFrame(title: _title, body: Center(child: Text('No questions available.', style: kidText(26 * s))));
+    }
 
     if (_finished) {
       final stars = _stars();
@@ -1069,9 +1078,14 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
             children: [
               Text(stars == 0 ? '💪' : ('⭐' * stars), style: TextStyle(fontSize: 70 * s)),
               SizedBox(height: 8 * s),
-              Text('$_correct / $_total correct', style: kidText(42 * s)),
+              Text('$_correct / $_baseCount first-time correct', style: kidText(38 * s)),
               SizedBox(height: 6 * s),
               Text(stars >= 2 ? 'Great work, ${MathStore.activeName}!' : 'Keep practising, ${MathStore.activeName}!', style: kidText(24 * s)),
+              if (_needPractice > 0)
+                Padding(
+                  padding: EdgeInsets.only(top: 6 * s),
+                  child: Text('🔁 $_needPractice question(s) will come back in Smart Practice', style: kidText(20 * s, w: FontWeight.w600)),
+                ),
               SizedBox(height: 22 * s),
               Wrap(
                 spacing: 16 * s,
@@ -1148,7 +1162,9 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
         title: _title,
         actions: [
           Text('${_index + 1}/$_total  ⭐$_correct', style: kidText(24 * s)),
-          SizedBox(width: 14 * s),
+          SizedBox(width: 12 * s),
+          if (MathStore.hints) ActionButton(s: s, icon: Icons.lightbulb_rounded, label: 'Hint', color: const Color(0xFFF59E0B), onPressed: _hint),
+          if (MathStore.hints) SizedBox(width: 10 * s),
           ActionButton(s: s, icon: Icons.volume_up_rounded, label: 'Say', color: const Color(0xFF00ACC1), onPressed: _sayQuestion),
         ],
         body: Column(
@@ -1167,7 +1183,7 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
                 ),
               ),
             ),
-            SizedBox(height: 26 * s, child: Text(_message, style: kidText(22 * s))),
+            SizedBox(height: 26 * s, child: Text(_message, textAlign: TextAlign.center, style: kidText(22 * s))),
             SizedBox(height: 6 * s),
             Wrap(alignment: WrapAlignment.center, spacing: 16 * s, runSpacing: 14 * s, children: optionWidgets),
             SizedBox(height: 10 * s),
@@ -1181,159 +1197,6 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
 // ----------------------------------------------------------------------
 // SETTINGS / PROFILES / REPORT CARD
 // ----------------------------------------------------------------------
-class MathSettingsScreen extends StatefulWidget {
-  const MathSettingsScreen({super.key});
-  @override
-  State<MathSettingsScreen> createState() => _MathSettingsScreenState();
-}
-
-class _MathSettingsScreenState extends State<MathSettingsScreen> {
-  Future<void> _open(Widget screen) async {
-    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen));
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = uiScale(context);
-    const optionChoices = <String>['4', '5', '6'];
-    const countChoices = <String>['5', '10', '15', '20'];
-    final rows = <Widget>[
-      SettingLinkRow(label: 'Report Card', s: s, autofocus: true, onPressed: () => _open(const MathReportScreen())),
-      SettingLinkRow(label: 'Child Profiles', value: MathStore.activeName, s: s, onPressed: () => _open(const MathProfilesScreen())),
-      SettingToggleRow(
-        label: 'Sound effects',
-        value: MathStore.sound,
-        s: s,
-        onChanged: (bool v) {
-          setState(() => MathStore.sound = v);
-          MathStore.saveBool('math_sound', v);
-        },
-      ),
-      SettingToggleRow(
-        label: 'Read questions aloud',
-        value: MathStore.autoSpeak,
-        s: s,
-        onChanged: (bool v) {
-          setState(() => MathStore.autoSpeak = v);
-          MathStore.saveBool('math_autospeak', v);
-        },
-      ),
-      SettingLinkRow(
-        label: 'Select Language (speech)',
-        value: MathStore.lang == 'hi' ? 'हिन्दी' : 'English',
-        s: s,
-        onPressed: () {
-          final next = MathStore.lang == 'hi' ? 'en' : 'hi';
-          setState(() => MathStore.lang = next);
-          MathStore.saveSetting('math_lang', next);
-          Speaker.instance.isAvailable(next).then((bool ok) {
-            if (!ok && mounted) {
-              showKidsSnack(context, 'No ${next == 'hi' ? 'Hindi' : 'English'} voice found on this TV. Install it in TV Settings > Text-to-speech.');
-            }
-          });
-        },
-      ),
-      SettingChoiceRow(
-        label: 'Options for Questions',
-        choices: optionChoices,
-        selectedIndex: optionChoices.indexOf(MathStore.optionCount.toString()).clamp(0, 2).toInt(),
-        s: s,
-        onSelected: (int i) {
-          setState(() => MathStore.optionCount = int.parse(optionChoices[i]));
-          MathStore.saveSetting('math_options', optionChoices[i]);
-        },
-      ),
-      SettingChoiceRow(
-        label: 'Questions per round',
-        choices: countChoices,
-        selectedIndex: countChoices.indexOf(MathStore.questionCount.toString()).clamp(0, 3).toInt(),
-        s: s,
-        onSelected: (int i) {
-          setState(() => MathStore.questionCount = int.parse(countChoices[i]));
-          MathStore.saveSetting('math_count', countChoices[i]);
-        },
-      ),
-      SettingToggleRow(
-        label: 'Retries (try again after a mistake)',
-        value: MathStore.retries,
-        s: s,
-        onChanged: (bool v) {
-          setState(() => MathStore.retries = v);
-          MathStore.saveBool('math_retries', v);
-        },
-      ),
-    ];
-    return ScreenFrame(
-      title: '⚙️ Math Settings',
-      body: FocusList(s: s, items: rows),
-    );
-  }
-}
-
-class MathProfilesScreen extends StatefulWidget {
-  const MathProfilesScreen({super.key});
-  @override
-  State<MathProfilesScreen> createState() => _MathProfilesScreenState();
-}
-
-class _MathProfilesScreenState extends State<MathProfilesScreen> {
-  Future<void> _add() async {
-    final name = await askText(context, 'Child name', 'Type a name');
-    if (name == null) return;
-    await MathStore.addChild(name);
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _delete(String id, String name) async {
-    if (MathStore.children.length <= 1) {
-      showKidsSnack(context, 'At least one child profile is needed.');
-      return;
-    }
-    final ok = await askConfirm(context, 'Delete $name and their report card?');
-    if (!ok) return;
-    await MathStore.deleteChild(id);
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = uiScale(context);
-    final rows = <Widget>[];
-    for (var i = 0; i < MathStore.children.length; i++) {
-      final c = MathStore.children[i];
-      final id = c['id'] ?? '';
-      final name = c['name'] ?? 'Player';
-      final active = id == MathStore.activeId;
-      rows.add(Row(
-        children: [
-          Expanded(
-            child: SettingLinkRow(
-              label: '${active ? '✅ ' : ''}$name',
-              value: active ? 'Playing' : 'Select',
-              s: s,
-              autofocus: i == 0,
-              onPressed: () async {
-                await MathStore.setActive(id);
-                if (mounted) setState(() {});
-              },
-            ),
-          ),
-          SizedBox(width: 12 * s),
-          ActionButton(s: s, icon: Icons.delete_rounded, color: const Color(0xFFEF4444), onPressed: () => _delete(id, name)),
-        ],
-      ));
-    }
-    return ScreenFrame(
-      title: '👧👦 Child Profiles',
-      actions: [
-        ActionButton(s: s, icon: Icons.person_add_alt_1_rounded, label: 'Add Child', color: const Color(0xFF22C55E), onPressed: _add),
-      ],
-      body: FocusList(s: s, items: rows),
-    );
-  }
-}
-
 class MathReportScreen extends StatefulWidget {
   const MathReportScreen({super.key});
   @override
