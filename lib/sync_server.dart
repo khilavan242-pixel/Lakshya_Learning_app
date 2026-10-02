@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'app_store.dart';
 import 'core_audio_models.dart';
+import 'doc_store.dart';
 import 'quiz_model.dart';
 
 // ----------------------------------------------------------------------
@@ -15,10 +15,7 @@ class CardImages {
   static int _counter = 0;
 
   static Future<Directory> dir() async {
-    final doc = await getApplicationDocumentsDirectory();
-    final d = Directory('${doc.path}/custom_cards');
-    if (!await d.exists()) await d.create(recursive: true);
-    return d;
+    return DocStore.folder('photos');
   }
 
   static Future<String> save(String dataUrl) async {
@@ -48,6 +45,18 @@ class TVSyncServer {
   final void Function() onChanged;
 
   TVSyncServer({required this.onChanged});
+
+  static const Map<String, String> _corsHeaders = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'access-control-allow-private-network': 'true',
+  };
+
+  Middleware get _cors => createMiddleware(
+        requestHandler: (Request r) => r.method == 'OPTIONS' ? Response(204, headers: _corsHeaders) : null,
+        responseHandler: (Response resp) => resp.change(headers: _corsHeaders),
+      );
 
   static const Map<String, String> _jsonHeaders = {'content-type': 'application/json; charset=utf-8'};
 
@@ -226,6 +235,28 @@ class TVSyncServer {
           return {'status': 'ok'};
         }));
 
+    // ---- OFFLINE MAKER: the phone saves words/quizzes locally and sends them when connected ----
+    router.get('/api/ping', (Request request) {
+      return Response.ok(json.encode({'ok': true}), headers: _jsonHeaders);
+    });
+
+    router.get('/offline', (Request request) {
+      return Response.ok(_offlinePageHtml.replaceAll('__TV_BASE__', ''), headers: {'content-type': 'text/html; charset=utf-8'});
+    });
+
+    // same page as a downloadable file, with this TV's address built in
+    router.get('/offline.html', (Request request) {
+      final host = request.headers['host'] ?? '';
+      final base = host.isEmpty ? '' : 'http://$host';
+      return Response.ok(
+        _offlinePageHtml.replaceAll('__TV_BASE__', base),
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'content-disposition': 'attachment; filename="KidsLearning_Offline.html"',
+        },
+      );
+    });
+
     // ---- QUIZ MANAGER (paste / upload JSON from the phone) ----
     router.get('/quiz', (Request request) {
       return Response.ok(_quizPageHtml, headers: {'content-type': 'text/html; charset=utf-8'});
@@ -281,7 +312,8 @@ class TVSyncServer {
     });
 
     try {
-      _server = await shelf_io.serve(router.call, InternetAddress.anyIPv4, 8080);
+      final handler = const Pipeline().addMiddleware(_cors).addHandler(router.call);
+      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, 8080);
       return _server!.port;
     } catch (e) {
       return null;
@@ -292,6 +324,348 @@ class TVSyncServer {
     await _server?.close(force: true);
     _server = null;
   }
+
+  static const String _offlinePageHtml = r'''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offline Maker</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:linear-gradient(180deg,#8fd0f5,#d6efff 70%,#e9f7ff);min-height:100vh;color:#0f172a;padding-bottom:70px}
+header{background:#3f6fbf;color:#fff;padding:14px 12px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:10}
+header a{color:#fff;text-decoration:none;font-size:28px;width:36px;text-align:center}
+header h1{flex:1;margin:0;font-size:21px;font-weight:600;text-align:center}
+#dot{width:16px;height:16px;border-radius:50%;background:#ef4444;margin-right:8px}
+#dot.on{background:#22c55e}
+main{max-width:760px;margin:0 auto;padding:14px}
+.box{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 3px 0 rgba(30,64,200,.25)}
+.hide{display:none}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs button{flex:1;padding:12px 4px;border:0;border-radius:12px;font-weight:700;font-size:15px;background:#94a3b8;color:#fff}
+.tabs button.sel{background:#1d4ed8}
+input,textarea{width:100%;padding:12px;border-radius:10px;border:2px solid #3b82f6;font-size:16px;margin-bottom:8px;background:#fff;color:#0f172a}
+textarea{min-height:120px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px}
+button.b{border:0;border-radius:12px;color:#fff;font-weight:700;font-size:16px;padding:13px;width:100%;margin-top:6px;background:#3b82f6}
+.green{background:#10b981!important}.red{background:#ef4444!important}.gray{background:#64748b!important}
+.row{display:flex;align-items:center;gap:10px;background:#f1f7ff;border-radius:12px;padding:8px;margin-top:8px}
+.grow{flex:1;min-width:0;overflow-wrap:anywhere}
+.thumb{width:48px;height:48px;border-radius:10px;object-fit:cover;background:#cbd5e1;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px}
+.mini{border:0;border-radius:10px;background:#fde047;font-size:18px;width:40px;height:40px;flex:none}
+.muted{color:#64748b;font-size:13px;margin:4px 0}
+.err{color:#b91c1c;font-size:13px}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:12px 18px;border-radius:24px;font-size:15px;display:none;z-index:60;max-width:90%}
+a.dl{display:block;text-align:center;background:#7c3aed;color:#fff;text-decoration:none;font-weight:700;border-radius:12px;padding:13px;margin-top:6px}
+</style>
+</head>
+<body>
+<header><a href="/">&#8249;</a><h1>Offline Maker</h1><div id="dot"></div></header>
+<main>
+  <div class="box">
+    <b id="status">Checking the TV...</b>
+    <p class="muted">Add words, photos and quizzes any time. If the TV is not reachable they are saved on this phone and sent automatically when you are connected again.</p>
+    <div id="addrBox" class="hide">
+      <input id="addr" type="text" placeholder="TV address, e.g. 192.168.1.5:8080">
+      <button class="b gray" id="addrBtn">Save TV address</button>
+      <p class="muted">The address is shown under the QR code on the TV.</p>
+    </div>
+    <div id="saveBox" class="hide">
+      <a class="dl" href="/offline.html" download="KidsLearning_Offline.html">Save this page on my phone (works without the TV)</a>
+      <p class="muted">Open the saved file later with Chrome (Downloads). It keeps your work on the phone and sends it to the TV when you are on the same Wi-Fi.</p>
+    </div>
+    <p class="err hide" id="noStore">This browser blocks saving for this page. Open the page from the TV address instead.</p>
+  </div>
+
+  <div class="tabs">
+    <button id="tWords" class="sel">Words</button>
+    <button id="tQuiz">Quizzes</button>
+    <button id="tWait">Waiting (<span id="cnt">0</span>)</button>
+  </div>
+
+  <section id="sWords">
+    <div class="box">
+      <b>1. Category</b>
+      <input id="cat" type="text" placeholder="e.g. FRUITS" value="MIXED">
+      <b>2. Words (comma or new line)</b>
+      <textarea id="wordsText" placeholder="APPLE, BANANA, MANGO" style="text-transform:uppercase;font-family:inherit;font-size:16px"></textarea>
+      <button class="b" id="addDrafts">Add to list</button>
+    </div>
+    <div class="box">
+      <b>3. Words to save (<span id="dcnt">0</span>)</b>
+      <div id="drafts"></div>
+      <button class="b green" id="saveWords">Save (send to TV when connected)</button>
+    </div>
+  </section>
+
+  <section id="sQuiz" class="hide">
+    <div class="box">
+      <b>Quiz JSON</b>
+      <p class="muted">Paste the quiz or choose a .json file.</p>
+      <input type="file" id="qfile" accept=".json,.txt,application/json,text/plain">
+      <textarea id="qtext" placeholder='{ "title": "My quiz", "questions": [ ... ] }'></textarea>
+      <button class="b green" id="saveQuiz">Save quiz (send to TV when connected)</button>
+    </div>
+  </section>
+
+  <section id="sWait" class="hide">
+    <div class="box">
+      <b>Saved on this phone, not yet on the TV</b>
+      <div id="wlist"></div>
+      <button class="b" id="syncBtn">Send to the TV now</button>
+      <button class="b gray" id="checkBtn">Check connection</button>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+var TV_BASE = "__TV_BASE__";
+var KEY = "kls_pending";
+var KEYBASE = "kls_base";
+var pending = [];
+var drafts = [];
+var online = false;
+var syncing = false;
+var storageOk = true;
+
+function $(id){ return document.getElementById(id); }
+function clean(s){ return (s || "").trim().toUpperCase(); }
+function uid(){ return "p" + Date.now() + "_" + Math.floor(Math.random() * 100000); }
+function toast(msg){
+  var t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(function(){ t.style.display = "none"; }, 2600);
+}
+function isLive(){ return TV_BASE === "" && location.protocol.indexOf("http") === 0; }
+
+function load(){
+  try { localStorage.setItem("kls_test", "1"); localStorage.removeItem("kls_test"); } catch(e){ storageOk = false; }
+  try { pending = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch(e){ pending = []; }
+  if (!Array.isArray(pending)) pending = [];
+}
+function store(){
+  try { localStorage.setItem(KEY, JSON.stringify(pending)); return true; }
+  catch(e){ alert("There is no space left to save more on this phone page. Send the waiting items to the TV first."); return false; }
+}
+function base(){
+  if (isLive()) return "";
+  var b = "";
+  try { b = localStorage.getItem(KEYBASE) || ""; } catch(e){}
+  if (!b) b = TV_BASE;
+  b = (b || "").trim();
+  if (b && !/^https?:\/\//i.test(b)) b = "http://" + b;
+  return b.replace(/\/+$/, "");
+}
+
+/* ------------------------------------------------------------ connection */
+async function ping(){
+  var b = base();
+  if (!isLive() && !b) return false;
+  var ctl = new AbortController();
+  var t = setTimeout(function(){ ctl.abort(); }, 2500);
+  try {
+    var r = await fetch(b + "/api/ping?t=" + Date.now(), {signal: ctl.signal, cache: "no-store"});
+    clearTimeout(t);
+    return r.ok;
+  } catch(e){ clearTimeout(t); return false; }
+}
+async function check(){ setOnline(await ping()); }
+function setOnline(v){
+  online = v;
+  render();
+  if (v && pending.length && !syncing) syncNow();
+}
+
+/* ----------------------------------------------------------------- sync */
+async function syncNow(){
+  if (syncing || !pending.length) return;
+  syncing = true;
+  render();
+  try {
+    var b = base();
+    var i = 0;
+    while (i < pending.length) {
+      var it = pending[i];
+      if (it.fatal) { i++; continue; }
+      var url = it.type === "words" ? "/api/upload-batch" : "/api/quiz/import";
+      var body = it.type === "words" ? it.items : {text: it.text};
+      var r;
+      try {
+        r = await fetch(b + url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+      } catch(e){ online = false; break; }
+      if (r.ok) { pending.splice(i, 1); store(); continue; }
+      var msg = "";
+      try { var d = await r.json(); msg = d.error || ""; } catch(e2){}
+      it.error = msg || ("The TV answered with error " + r.status);
+      it.fatal = (r.status === 400);
+      store();
+      i++;
+    }
+  } finally {
+    syncing = false;
+    render();
+  }
+  if (!pending.length) toast("All sent to the TV");
+}
+
+/* ---------------------------------------------------------------- words */
+function squareFromDataUrl(src, cb){
+  var img = new Image();
+  img.onload = function(){
+    var side = Math.min(img.width, img.height);
+    var c = document.createElement("canvas");
+    c.width = 360; c.height = 360;
+    c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 360, 360);
+    cb(c.toDataURL("image/jpeg", 0.65));
+  };
+  img.src = src;
+}
+function pickPhoto(i){
+  var inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "image/*"; inp.style.display = "none";
+  inp.onchange = function(){
+    var f = inp.files[0];
+    if (f){
+      var rd = new FileReader();
+      rd.onload = function(e){ squareFromDataUrl(e.target.result, function(d){ drafts[i].image = d; render(); }); };
+      rd.readAsDataURL(f);
+    }
+    document.body.removeChild(inp);
+  };
+  document.body.appendChild(inp);
+  inp.click();
+}
+$("addDrafts").onclick = function(){
+  var parts = $("wordsText").value.split(/[,\n]/).map(clean).filter(function(w){ return w.length > 0; });
+  if (!parts.length){ toast("Type some words first"); return; }
+  parts.forEach(function(w){ drafts.push({word: w, image: null}); });
+  $("wordsText").value = "";
+  render();
+};
+$("saveWords").onclick = function(){
+  if (!drafts.length){ toast("Add some words first"); return; }
+  var topic = clean($("cat").value) || "MIXED";
+  var items = drafts.map(function(d){ return {word: d.word, image_base64: d.image, topic: topic}; });
+  pending.push({id: uid(), type: "words", topic: topic, items: items});
+  if (!store()){ pending.pop(); return; }
+  drafts = [];
+  toast(online ? "Saved - sending to the TV..." : "Saved on this phone - will be sent later");
+  render();
+  if (online) syncNow();
+};
+
+/* --------------------------------------------------------------- quizzes */
+$("qfile").onchange = function(){
+  var f = $("qfile").files[0];
+  if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function(){ $("qtext").value = rd.result; toast("File loaded - press the green button"); };
+  rd.readAsText(f, "utf-8");
+};
+$("saveQuiz").onclick = function(){
+  var text = $("qtext").value.trim();
+  if (!text){ toast("Paste the quiz JSON first"); return; }
+  var probe = text.replace(/^```[a-zA-Z]*\s*/, "").replace(/```\s*$/, "");
+  var title = "Quiz";
+  var count = 0;
+  try {
+    var data = JSON.parse(probe);
+    if (Array.isArray(data)) count = data.length;
+    else if (data && typeof data === "object") {
+      title = data.title || data.name || "Quiz";
+      if (Array.isArray(data.questions)) count = data.questions.length;
+      else if (Array.isArray(data.quizzes)) { title = data.quizzes.length + " quizzes"; count = 0; }
+    }
+  } catch(e){
+    toast("This is not valid JSON - please check it");
+    return;
+  }
+  pending.push({id: uid(), type: "quiz", text: text, title: title, count: count});
+  if (!store()){ pending.pop(); return; }
+  $("qtext").value = "";
+  toast(online ? "Saved - sending to the TV..." : "Saved on this phone - will be sent later");
+  render();
+  if (online) syncNow();
+};
+
+/* --------------------------------------------------------------- render */
+function renderDrafts(){
+  $("dcnt").textContent = drafts.length;
+  var box = $("drafts"); box.innerHTML = "";
+  drafts.forEach(function(d, i){
+    var row = document.createElement("div"); row.className = "row";
+    var th;
+    if (d.image){ th = document.createElement("img"); th.className = "thumb"; th.src = d.image; }
+    else { th = document.createElement("div"); th.className = "thumb"; th.textContent = "\uD83D\uDDBC"; }
+    var nm = document.createElement("div"); nm.className = "grow"; var bb = document.createElement("b"); bb.textContent = d.word; nm.appendChild(bb);
+    var ph = document.createElement("button"); ph.className = "mini"; ph.textContent = "\uD83D\uDCF7"; ph.onclick = function(){ pickPhoto(i); };
+    var rm = document.createElement("button"); rm.className = "mini"; rm.textContent = "\u2716"; rm.onclick = function(){ drafts.splice(i, 1); render(); };
+    row.appendChild(th); row.appendChild(nm); row.appendChild(ph); row.appendChild(rm);
+    box.appendChild(row);
+  });
+}
+function renderWait(){
+  var box = $("wlist"); box.innerHTML = "";
+  if (!pending.length){
+    var p = document.createElement("p"); p.className = "muted"; p.textContent = "Nothing is waiting. Everything is on the TV."; box.appendChild(p);
+  }
+  pending.forEach(function(it, i){
+    var row = document.createElement("div"); row.className = "row";
+    var th = document.createElement("div"); th.className = "thumb"; th.textContent = it.type === "words" ? "\uD83D\uDCDD" : "\uD83E\uDDE0";
+    var info = document.createElement("div"); info.className = "grow";
+    var b = document.createElement("b");
+    b.textContent = it.type === "words" ? (it.items.length + " word(s) in " + it.topic) : ("Quiz: " + it.title + (it.count ? " (" + it.count + " questions)" : ""));
+    var st = document.createElement("div");
+    if (it.error){ st.className = "err"; st.textContent = "\u26A0 " + it.error; }
+    else { st.className = "muted"; st.textContent = syncing ? "Sending..." : (online ? "Ready to send" : "Waiting for the TV"); }
+    info.appendChild(b); info.appendChild(st);
+    var del = document.createElement("button"); del.className = "mini"; del.textContent = "\uD83D\uDDD1";
+    del.onclick = function(){ if (confirm("Delete this waiting item?")){ pending.splice(i, 1); store(); render(); } };
+    row.appendChild(th); row.appendChild(info); row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+function render(){
+  $("cnt").textContent = pending.length;
+  $("dot").className = online ? "on" : "";
+  $("status").textContent = online ? "\uD83D\uDFE2 Connected to the TV" : "\uD83D\uDD34 Not connected to the TV - saving on this phone";
+  $("addrBox").className = isLive() ? "hide" : "";
+  $("saveBox").className = isLive() ? "" : "hide";
+  $("noStore").className = storageOk ? "err hide" : "err";
+  renderDrafts();
+  renderWait();
+}
+
+/* ----------------------------------------------------------------- tabs */
+function showTab(t){
+  $("sWords").className = t === "w" ? "" : "hide";
+  $("sQuiz").className = t === "q" ? "" : "hide";
+  $("sWait").className = t === "x" ? "" : "hide";
+  $("tWords").className = t === "w" ? "sel" : "";
+  $("tQuiz").className = t === "q" ? "sel" : "";
+  $("tWait").className = t === "x" ? "sel" : "";
+}
+$("tWords").onclick = function(){ showTab("w"); };
+$("tQuiz").onclick = function(){ showTab("q"); };
+$("tWait").onclick = function(){ showTab("x"); };
+$("syncBtn").onclick = function(){ if (!online) toast("The TV is not reachable yet"); else syncNow(); };
+$("checkBtn").onclick = function(){ check(); toast("Checking..."); };
+$("addrBtn").onclick = function(){
+  try { localStorage.setItem(KEYBASE, $("addr").value.trim()); } catch(e){}
+  toast("TV address saved");
+  check();
+};
+
+load();
+try { $("addr").value = localStorage.getItem(KEYBASE) || TV_BASE; } catch(e){ $("addr").value = TV_BASE; }
+render();
+check();
+setInterval(check, 5000);
+window.addEventListener("online", check);
+</script>
+</body>
+</html>
+''';
 
   static const String _quizPageHtml = r'''
 <!DOCTYPE html>
@@ -495,6 +869,7 @@ loadList();
   <!-- HOME MENU -->
   <section id="v-home" class="view active">
     <div class="menu">
+      <div class="mrow" onclick="location.href='/offline'"><span>Offline mode - save on phone, send later</span><i class="play">&#9654;</i></div>
       <div class="mrow" onclick="location.href='/quiz'"><span>Quiz Time - add / manage quizzes</span><i class="play">&#9654;</i></div>
       <div class="mrow" data-go="add"><span>Add words &amp; photos</span><i class="play">&#9654;</i></div>
       <div class="mrow" data-go="manage"><span>Manage spelling list</span><i class="play">&#9654;</i></div>
