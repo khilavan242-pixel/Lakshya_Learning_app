@@ -7,9 +7,12 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'app_store.dart';
 import 'core_audio_models.dart';
 import 'kids_ui.dart';
+import 'players.dart';
 import 'sync_server.dart';
 
 // --------------------------------------------------------- 1. LOBBY
+String _spellKey(WordCard c) => 'spell:${c.word}';
+
 class TopicLobbyScreen extends StatefulWidget {
   const TopicLobbyScreen({super.key});
   @override
@@ -34,8 +37,14 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
     super.dispose();
   }
 
+  List<WordCard> _allWords = <WordCard>[];
+
   Future<void> _loadCards() async {
-    final cards = await CardStore.loadCards();
+    final all = await CardStore.loadCards();
+    // each player only sees the topics selected for him/her in Settings
+    final allowed = PlayerStore.active.spellingTopics;
+    var cards = allowed == null ? all : all.where((WordCard c) => allowed.contains(c.topic)).toList();
+    if (cards.isEmpty) cards = all;
     final topics = <String, List<WordCard>>{};
     if (cards.isNotEmpty) topics['ALL WORDS'] = List<WordCard>.of(cards);
     for (final card in cards) {
@@ -43,13 +52,51 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
       topics.putIfAbsent(card.topic, () => <WordCard>[]).add(card);
     }
     if (!mounted) return;
-    final added = _lastCount >= 0 && cards.length > _lastCount;
-    _lastCount = cards.length;
+    final added = _lastCount >= 0 && all.length > _lastCount;
+    _lastCount = all.length;
     if (added) GameAudioService.instance.playSuccessFanfare();
     setState(() {
+      _allWords = cards;
       _topics = topics;
       _loaded = true;
     });
+  }
+
+  List<WordCard> _masterRound() {
+    final pool = Mastery.notMastered<WordCard>(_allWords, _spellKey);
+    return Mastery.smartPick<WordCard>(pool, _spellKey, PlayerStore.active.rounds);
+  }
+
+  /// Master Play: rounds of the words the child has not mastered yet, hardest first,
+  /// until every word has been spelled correctly 3 times in a row.
+  Future<void> _masterPlay() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => TVGameScreen(deck: <WordCard>[], title: 'Master Play', session: true, master: true, builder: _masterRound),
+      ),
+    );
+    if (mounted) _loadCards();
+  }
+
+  Future<void> _playTopic(String topic) async {
+    final cards = _topics[topic] ?? <WordCard>[];
+    final smart = PlayerStore.active.smart;
+    var deck = List<WordCard>.of(cards);
+    if (smart) {
+      final left = Mastery.notMastered<WordCard>(cards, _spellKey);
+      if (left.isEmpty) {
+        showKidsSnack(context, '🏆 All words in $topic are mastered - revision round!');
+      } else {
+        deck = List<WordCard>.of(left);
+      }
+      deck.shuffle();
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => TVGameScreen(deck: deck, title: topic, session: smart)),
+    );
+    if (mounted) _loadCards();
   }
 
   // Called by the sync server after ANY change made from the phone.
@@ -153,22 +200,36 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
       );
     } else {
       final cards = <Widget>[];
+      final pending = Mastery.notMastered<WordCard>(_allWords, _spellKey).length;
+      cards.add(BigTile(
+        emoji: '🏆',
+        title: 'Master Play',
+        subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
+        colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
+        s: s,
+        width: 210,
+        height: 190,
+        autofocus: true,
+        onPressed: _masterPlay,
+      ));
       for (var i = 0; i < keys.length; i++) {
         final topic = keys[i];
+        final list = _topics[topic]!;
+        final smart = PlayerStore.active.smart;
+        final left = Mastery.notMastered<WordCard>(list, _spellKey).length;
+        final done = list.length - left;
+        String? sub;
+        if (smart) {
+          sub = left == 0 ? '✅ all mastered' : '$left to learn${done > 0 ? '  •  ✅$done' : ''}';
+        }
         cards.add(TopicCard(
           topic: topic,
-          count: _topics[topic]!.length,
+          count: list.length,
+          subtitle: sub,
           colorIndex: i,
           s: s,
-          autofocus: i == 0,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => TVGameScreen(deck: _topics[topic]!, title: topic),
-              ),
-            );
-          },
+          autofocus: false,
+          onPressed: () => _playTopic(topic),
         ));
       }
       body = Center(
@@ -217,6 +278,7 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
 class TopicCard extends StatelessWidget {
   final String topic;
   final int count;
+  final String? subtitle;
   final int colorIndex;
   final double s;
   final bool autofocus;
@@ -226,6 +288,7 @@ class TopicCard extends StatelessWidget {
     super.key,
     required this.topic,
     required this.count,
+    this.subtitle,
     required this.colorIndex,
     required this.s,
     required this.onPressed,
@@ -263,7 +326,7 @@ class TopicCard extends StatelessWidget {
             SizedBox(height: 6 * s),
             Text(topic, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: kidText(26 * s)),
             SizedBox(height: 4 * s),
-            Text(count == 1 ? '1 word' : '$count words', style: kidText(17 * s, w: FontWeight.w600)),
+            Text(subtitle ?? (count == 1 ? '1 word' : '$count words'), textAlign: TextAlign.center, style: kidText(16 * s, w: FontWeight.w600)),
           ],
         ),
       ),
@@ -275,7 +338,17 @@ class TopicCard extends StatelessWidget {
 class TVGameScreen extends StatefulWidget {
   final List<WordCard> deck;
   final String title;
-  const TVGameScreen({super.key, required this.deck, this.title = 'Spelling'});
+  final bool session; // finite round with a summary (smart practice)
+  final bool master; // master play: continue until every word is mastered
+  final List<WordCard> Function()? builder; // makes a new round (master play)
+  const TVGameScreen({
+    super.key,
+    required this.deck,
+    this.title = 'Spelling',
+    this.session = false,
+    this.master = false,
+    this.builder,
+  });
   @override
   State<TVGameScreen> createState() => _TVGameScreenState();
 }
@@ -289,14 +362,40 @@ class _TVGameScreenState extends State<TVGameScreen> {
   bool _wrong = false;
   int _token = 0;
 
+  List<WordCard> _deck = <WordCard>[];
+  List<bool> _isRepeat = <bool>[];
+  final Map<String, int> _repeatCount = <String, int>{};
+  int _baseCount = 0;
+  int _correctFirst = 0;
+  int _needPractice = 0;
+  bool _finished = false;
+  bool _moreLeft = false;
+  bool _mistake = false;
+  bool _hintUsed = false;
+  bool _registered = false;
+
   @override
   void initState() {
     super.initState();
+    _loadDeck();
     _prepareWord();
   }
 
+  void _loadDeck() {
+    final make = widget.builder;
+    _deck = make != null ? make() : List<WordCard>.of(widget.deck);
+    _isRepeat = List<bool>.filled(_deck.length, false);
+    _repeatCount.clear();
+    _baseCount = _deck.length;
+    _currentIndex = 0;
+    _correctFirst = 0;
+    _needPractice = 0;
+    _finished = false;
+  }
+
   void _prepareWord() {
-    final word = widget.deck[_currentIndex].word;
+    if (_deck.isEmpty) return;
+    final word = _deck[_currentIndex].word;
     final scrambled = word.split('');
     for (var i = 0; i < 10; i++) {
       scrambled.shuffle();
@@ -307,16 +406,148 @@ class _TVGameScreenState extends State<TVGameScreen> {
     _locked = false;
     _solved = false;
     _wrong = false;
+    _mistake = false;
+    _hintUsed = false;
+    _registered = false;
     _token++;
-    CardStore.speak(word);
+    if (PlayerStore.active.speak) CardStore.speak(word);
+  }
+
+  /// Remember how the child did. clean = spelled right with no mistake and no hint.
+  void _registerResult(bool clean) {
+    final card = _deck[_currentIndex];
+    final key = _spellKey(card);
+    Mastery.record(key, clean: clean);
+    if (!widget.session) return;
+    if (clean) {
+      if (!_isRepeat[_currentIndex]) _correctFirst++;
+      if (widget.master && !Mastery.isMastered(key)) _requeue(card, 6);
+    } else {
+      _needPractice++;
+      _requeue(card, 4);
+    }
+  }
+
+  void _requeue(WordCard card, int gap) {
+    final key = _spellKey(card);
+    final used = _repeatCount[key] ?? 0;
+    final cap = widget.master ? 5 : 2;
+    if (used >= cap) return;
+    _repeatCount[key] = used + 1;
+    final at = math.min(_deck.length, _currentIndex + gap);
+    _deck.insert(at, card);
+    _isRepeat.insert(at, true);
+  }
+
+  void _finishSession() {
+    final make = widget.builder;
+    final more = widget.master && make != null && make().isNotEmpty;
+    final sfx = _baseCount > 0 && _correctFirst * 2 >= _baseCount;
+    setState(() {
+      _moreLeft = more;
+      _finished = true;
+      _token++;
+    });
+    if (sfx && PlayerStore.active.sound) GameAudioService.instance.playSuccessFanfare();
+  }
+
+  void _restart() {
+    setState(() {
+      _loadDeck();
+      _prepareWord();
+    });
   }
 
   void _goTo(int delta) {
-    final n = widget.deck.length;
+    if (_deck.isEmpty) return;
+    final n = _deck.length;
+    if (widget.session) {
+      final next = _currentIndex + delta;
+      if (next < 0) return;
+      if (delta > 0 && !_solved && !_registered) {
+        _registered = true; // skipped = needs more practice
+        _registerResult(false);
+      }
+      if (next >= _deck.length) {
+        _finishSession();
+        return;
+      }
+      setState(() {
+        _currentIndex = next;
+        _prepareWord();
+      });
+      return;
+    }
     setState(() {
       _currentIndex = (_currentIndex + delta + n) % n;
       _prepareWord();
     });
+  }
+
+  Widget _doneScreen({required bool empty}) {
+    final s = uiScale(context);
+    if (empty) {
+      return ScreenFrame(
+        title: '🏆 ${widget.title}',
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('🏆', style: TextStyle(fontSize: 80 * s)),
+              Text('Everything is mastered!', style: kidText(40 * s)),
+              SizedBox(height: 6 * s),
+              Text('Amazing work, ${PlayerStore.active.name}!', style: kidText(24 * s)),
+              SizedBox(height: 22 * s),
+              ActionButton(s: s, icon: Icons.home_rounded, label: 'Back', color: const Color(0xFF5C6BC0), autofocus: true, onPressed: () => Navigator.maybePop(context)),
+            ],
+          ),
+        ),
+      );
+    }
+    final ratio = _baseCount == 0 ? 0.0 : _correctFirst / _baseCount;
+    final stars = ratio >= 0.9 ? 3 : (ratio >= 0.6 ? 2 : (ratio >= 0.3 ? 1 : 0));
+    final canContinue = widget.master ? _moreLeft : true;
+    return ScreenFrame(
+      title: '🏆 ${widget.title}',
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(stars == 0 ? '💪' : ('⭐' * stars), style: TextStyle(fontSize: 70 * s)),
+            SizedBox(height: 8 * s),
+            Text('$_correctFirst / $_baseCount first-time correct', style: kidText(38 * s)),
+            if (_needPractice > 0)
+              Padding(
+                padding: EdgeInsets.only(top: 8 * s),
+                child: Text('🔁 $_needPractice word(s) will come back until you know them', style: kidText(20 * s, w: FontWeight.w600)),
+              ),
+            if (widget.master)
+              Padding(
+                padding: EdgeInsets.only(top: 8 * s),
+                child: Text(_moreLeft ? 'Keep going - master every word! 💪' : '🏆 Every word is mastered!', style: kidText(22 * s)),
+              ),
+            SizedBox(height: 22 * s),
+            Wrap(
+              spacing: 16 * s,
+              runSpacing: 10 * s,
+              alignment: WrapAlignment.center,
+              children: [
+                if (canContinue)
+                  ActionButton(
+                    s: s,
+                    icon: widget.master ? Icons.arrow_forward_rounded : Icons.replay_rounded,
+                    label: widget.master ? 'Next Round' : 'Play Again',
+                    color: const Color(0xFF22C55E),
+                    autofocus: true,
+                    onPressed: _restart,
+                  ),
+                ActionButton(s: s, icon: Icons.home_rounded, label: 'Back', color: const Color(0xFF5C6BC0), autofocus: !canContinue, onPressed: () => Navigator.maybePop(context)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _nextWord() => _goTo(1);
@@ -327,7 +558,7 @@ class _TVGameScreenState extends State<TVGameScreen> {
     CardStore.keyClick();
     setState(() => _selectedTileIndices.add(index));
 
-    final target = widget.deck[_currentIndex].word;
+    final target = _deck[_currentIndex].word;
     if (_selectedTileIndices.length != target.length) return;
 
     final spelled = _selectedTileIndices.map((i) => _shuffledLetters[i]).join();
@@ -337,10 +568,13 @@ class _TVGameScreenState extends State<TVGameScreen> {
         _locked = true;
         _solved = true;
       });
+      final clean = !_mistake && !_hintUsed;
       CardStore.recordResult(target, correct: true);
-      GameAudioService.instance.playSuccessFanfare();
+      if (PlayerStore.active.sound) GameAudioService.instance.playSuccessFanfare();
       CardStore.speak(target);
-      Future<void>.delayed(const Duration(milliseconds: 1600), () {
+      _registered = true;
+      _registerResult(clean);
+      Future<void>.delayed(Duration(milliseconds: clean ? 1600 : 2800), () {
         if (mounted && token == _token) _nextWord();
       });
     } else {
@@ -348,8 +582,9 @@ class _TVGameScreenState extends State<TVGameScreen> {
         _locked = true;
         _wrong = true;
       });
+      _mistake = true;
       CardStore.recordResult(target, wrong: true);
-      GameAudioService.instance.playErrorFeedback();
+      if (PlayerStore.active.sound) GameAudioService.instance.playErrorFeedback();
       Future<void>.delayed(const Duration(milliseconds: 800), () {
         if (mounted && token == _token) {
           setState(() {
@@ -376,8 +611,8 @@ class _TVGameScreenState extends State<TVGameScreen> {
   }
 
   void _triggerHint() {
-    if (_locked) return;
-    final target = widget.deck[_currentIndex].word;
+    if (_locked || _deck.isEmpty || !PlayerStore.active.hints) return;
+    final target = _deck[_currentIndex].word;
 
     var ok = 0;
     while (ok < _selectedTileIndices.length && _shuffledLetters[_selectedTileIndices[ok]] == target[ok]) {
@@ -391,6 +626,7 @@ class _TVGameScreenState extends State<TVGameScreen> {
     final idx = _findTile(target[_selectedTileIndices.length]);
     if (idx != null) {
       CardStore.recordResult(target, hint: true);
+      _hintUsed = true;
       _onLetterSelected(idx);
     }
   }
@@ -515,13 +751,16 @@ class _TVGameScreenState extends State<TVGameScreen> {
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final s = uiScale(context);
-    final card = widget.deck[_currentIndex];
+    if (_deck.isEmpty) return _doneScreen(empty: true);
+    if (_finished) return _doneScreen(empty: false);
+    final card = _deck[_currentIndex];
     final target = card.word;
     final n = target.length;
 
     final poolGap = 12 * s;
     final tile = ((size.width - 64 * s - (n - 1) * poolGap) / n).clamp(40.0, 76 * s).toDouble();
-    final message = _solved ? '🎉 Great job!' : (_wrong ? 'Oops! Try again 🙂' : '');
+    final repeatMsg = (_currentIndex < _isRepeat.length && _isRepeat[_currentIndex]) ? '🔁 Let\'s try this word again!' : '';
+    final message = _solved ? ((_mistake || _hintUsed) ? '🌟 Remember: $target' : '🎉 Great job!') : (_wrong ? 'Oops! Try again 🙂' : repeatMsg);
 
     final pool = <Widget>[];
     for (var index = 0; index < _shuffledLetters.length; index++) {
@@ -557,7 +796,7 @@ class _TVGameScreenState extends State<TVGameScreen> {
                       SizedBox(width: 16 * s),
                       Expanded(
                         child: Text(
-                          '${widget.title}  •  ${_currentIndex + 1} / ${widget.deck.length}',
+                          '${widget.title}  •  ${_currentIndex + 1} / ${_deck.length}',
                           style: kidText(26 * s),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -623,6 +862,7 @@ class _TVGameScreenState extends State<TVGameScreen> {
                         color: const Color(0xFFEF4444),
                         onPressed: _undoLastLetter,
                       ),
+                      if (PlayerStore.active.hints)
                       ActionButton(
                         s: s,
                         icon: Icons.lightbulb_rounded,
