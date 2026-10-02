@@ -402,13 +402,15 @@ class _PlayersScreenState extends State<PlayersScreen> {
 
 class PlayerSettingsScreen extends StatefulWidget {
   final String playerId;
-  const PlayerSettingsScreen({super.key, required this.playerId});
+  final bool home; // true = the main Settings page opened from Home (always the active player)
+  const PlayerSettingsScreen({super.key, this.playerId = '', this.home = false});
   @override
   State<PlayerSettingsScreen> createState() => _PlayerSettingsScreenState();
 }
 
 class _PlayerSettingsScreenState extends State<PlayerSettingsScreen> {
   Player get _p {
+    if (widget.home) return PlayerStore.active;
     for (final p in PlayerStore.players) {
       if (p.id == widget.playerId) return p;
     }
@@ -508,7 +510,7 @@ class _PlayerSettingsScreenState extends State<PlayerSettingsScreen> {
         label: 'Name',
         value: p.name,
         s: s,
-        autofocus: true,
+        autofocus: !widget.home,
         onPressed: () async {
           final n = await askText(context, 'Player name', 'Type a name');
           if (n != null) await _commit(() => p.name = n);
@@ -584,7 +586,43 @@ class _PlayerSettingsScreenState extends State<PlayerSettingsScreen> {
         },
       ),
     ];
-    return ScreenFrame(title: '${p.emoji} ${p.name} - Settings', body: FocusList(s: s, items: rows));
+    if (widget.home) {
+      rows.insert(
+        0,
+        SettingLinkRow(
+          label: 'Player (tap to change / add)',
+          value: '${p.emoji} ${p.name}',
+          s: s,
+          autofocus: true,
+          onPressed: () async {
+            await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const PlayersScreen()));
+            if (mounted) setState(() {});
+          },
+        ),
+      );
+      rows.add(SettingToggleRow(
+        label: 'Key press sound (all games)',
+        value: CardStore.keySoundOn,
+        s: s,
+        onChanged: (bool v) async {
+          await CardStore.setKeySound(v);
+          if (mounted) setState(() {});
+        },
+      ));
+      rows.add(SettingToggleRow(
+        label: 'Text to speech (all games)',
+        value: CardStore.ttsOn,
+        s: s,
+        onChanged: (bool v) async {
+          await CardStore.setTts(v);
+          if (mounted) setState(() {});
+        },
+      ));
+    }
+    return ScreenFrame(
+      title: widget.home ? '⚙️ Settings  •  ${p.emoji} ${p.name}' : '${p.emoji} ${p.name} - Settings',
+      body: FocusList(s: s, items: rows),
+    );
   }
 }
 
