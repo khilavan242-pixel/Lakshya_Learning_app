@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'storage_location.dart';
 
@@ -27,43 +26,20 @@ Widget _infoRow(double s, String text) {
 }
 
 Future<void> showRestartDialog(BuildContext context, String where) async {
+  final s = uiScale(context);
   await showDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext ctx) => AlertDialog(
       backgroundColor: const Color(0xFF1E1B4B),
-      title: const Text('✅ Storage changed'),
-      content: Text('All data was copied to:\n$where\n\nThe old copy was kept. Please close the app and open it again.', style: const TextStyle(fontSize: 18)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28 * s)),
+      title: Text('✅ Storage changed', style: kidText(26 * s)),
+      content: Text('All data was copied to:\n$where\n\nThe old copy was kept. Please close the app and open it again.', style: TextStyle(fontSize: 19 * s, color: Colors.white)),
       actions: [
-        ElevatedButton(autofocus: true, onPressed: () => SystemNavigator.pop(), child: const Text('Close the app')),
+        ActionButton(s: s, icon: Icons.power_settings_new_rounded, label: 'Close the app', color: const Color(0xFF22C55E), autofocus: true, onPressed: () => SystemNavigator.pop()),
       ],
     ),
   );
-}
-
-/// Asked once from the Home screen when Documents is wanted but not writable yet.
-Future<void> offerDocumentsFolder(BuildContext context) async {
-  final kv = await AppKV.open();
-  if (kv.getBool('storage_offer_declined') == true) return;
-  if (!context.mounted) return;
-  final ok = await askConfirm(context, 'Save all data in the Documents folder, so you can see and back it up?\n(The TV will ask for permission.)');
-  if (!ok) {
-    await kv.setBool('storage_offer_declined', true);
-    return;
-  }
-  final granted = await StorageLocation.requestAccess();
-  if (!context.mounted) return;
-  if (!granted) {
-    showKidsSnack(context, 'Access not granted. You can allow it later in Settings > Storage location.');
-    return;
-  }
-  final err = await StorageLocation.switchTo('documents', '');
-  if (!context.mounted) return;
-  if (err != null) {
-    showKidsSnack(context, err);
-    return;
-  }
-  await showRestartDialog(context, '${StorageLocation.sharedDocuments}/${StorageLocation.appFolderName}');
 }
 
 class StorageScreen extends StatefulWidget {
@@ -110,18 +86,33 @@ class _StorageScreenState extends State<StorageScreen> {
   }
 
   Future<void> _allow() async {
-    final granted = await StorageLocation.requestAccess();
+    final ok = await StorageLocation.requestAccess();
     await _refresh();
     if (!mounted) return;
-    if (!granted) {
-      showKidsSnack(context, 'Access not granted. Open TV Settings > Apps > this app > Permissions and allow "Files" / "All files access".');
+    if (ok) {
+      if (StorageLocation.isFallback && StorageLocation.mode == 'documents') {
+        await _switch('${StorageLocation.sharedDocuments}/${StorageLocation.appFolderName}', 'documents', '');
+      } else {
+        showKidsSnack(context, 'Storage access is working.');
+      }
       return;
     }
-    if (StorageLocation.isFallback && StorageLocation.mode == 'documents') {
-      await _switch('${StorageLocation.sharedDocuments}/${StorageLocation.appFolderName}', 'documents', '');
-    } else {
-      showKidsSnack(context, 'Access allowed. Now choose where to save.');
-    }
+    final s = uiScale(context);
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B4B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28 * s)),
+        title: Text('🔓 Allow storage access', style: kidText(26 * s)),
+        content: Text(
+          'Android only lets you do this in the TV\'s own Settings:\n\nSettings > Apps > this app > Permissions > allow "Files and media" / "All files access".\n\nThen come back here and press this button again.\n\nIf your TV has no such option, use an app folder on a USB drive or the internal storage below. They need no permission.',
+          style: TextStyle(fontSize: 18 * s, color: Colors.white),
+        ),
+        actions: [
+          ActionButton(s: s, icon: Icons.check_rounded, label: 'OK', color: const Color(0xFF22C55E), autofocus: true, onPressed: () => Navigator.pop(ctx)),
+        ],
+      ),
+    );
   }
 
   Future<void> _pickFolder(DriveInfo d) async {
@@ -147,7 +138,7 @@ class _StorageScreenState extends State<StorageScreen> {
         autofocus: true,
         onPressed: () => _switch('${StorageLocation.sharedDocuments}/${StorageLocation.appFolderName}', 'documents', ''),
       ),
-      if (!_access) SettingLinkRow(label: '🔓 Allow storage access', s: s, onPressed: _allow),
+      if (!_access) SettingLinkRow(label: '🔓 Allow access to the shared Documents folder', s: s, onPressed: _allow),
       for (final d in _drives)
         SettingLinkRow(label: '📂 Choose a folder on ${d.label}', s: s, onPressed: () => _pickFolder(d)),
       for (final d in _drives)
