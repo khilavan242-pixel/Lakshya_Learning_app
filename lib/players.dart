@@ -5,6 +5,8 @@ import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'math_data.dart';
 import 'quiz_model.dart';
+import 'storage_location.dart';
+import 'storage_ui.dart';
 
 // ======================================================================
 // PLAYERS (children): name, avatar, level, per-child settings and the
@@ -600,6 +602,15 @@ class _PlayerSettingsScreenState extends State<PlayerSettingsScreen> {
           },
         ),
       );
+      rows.add(SettingLinkRow(
+        label: 'Storage location (Documents / USB / folder)',
+        value: StorageLocation.shortLabel,
+        s: s,
+        onPressed: () async {
+          await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const StorageScreen()));
+          if (mounted) setState(() {});
+        },
+      ));
       rows.add(SettingToggleRow(
         label: 'Key press sound (all games)',
         value: CardStore.keySoundOn,
