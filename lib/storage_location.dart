@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 // ======================================================================
 // WHERE THE APP SAVES ITS DATA
-//   default : <Internal storage>/Documents/KidsSuperApp   (visible in the TV file manager)
+//   default : <Internal storage>/Documents/KidsSuperApp   (when the TV allows it), otherwise
+//             the app's own Documents folder on internal storage (needs no permission)
 //   custom  : any folder on internal storage, SD card or USB drive
 //   private : the app's own hidden folder (needs no permission, used as a safe fallback)
 // The choice is remembered in a small file inside the app's private folder.
@@ -29,14 +29,15 @@ class StorageLocation {
   static String mode = 'documents'; // documents | custom | private
   static String customBase = ''; // folder chosen by the user; data goes in <customBase>/KidsSuperApp
   static String lastRoot = ''; // where the data was last known to be
-  static bool isFallback = false; // wanted place is not writable -> using the private folder
+  static bool isFallback = false; // the wanted place is not writable -> using another place
+  static String tier = 'wanted'; // wanted | appdocs | private
   static String statusNote = '';
   static Directory? _root;
 
   static String get activePath => _root?.path ?? '';
 
   static String get shortLabel {
-    if (isFallback) return '⚠ App folder';
+    if (isFallback) return tier == 'appdocs' ? 'App Documents' : '⚠ App folder';
     if (mode == 'documents') return 'Documents';
     if (mode == 'custom') {
       final parts = customBase.split('/').where((String p) => p.isNotEmpty).toList();
@@ -120,21 +121,41 @@ class StorageLocation {
     }
   }
 
+  /// The app's own "Documents" folder on the first external volume (no permission needed).
+  static Future<String> _appExternalDocuments() async {
+    try {
+      final dirs = await getExternalStorageDirectories(type: StorageDirectory.documents);
+      if (dirs != null && dirs.isNotEmpty) return dirs.first.path;
+    } catch (_) {}
+    return '';
+  }
+
   static Future<void> _resolve() async {
     final priv = await _privateRoot();
     var target = priv;
-    isFallback = false;
-    statusNote = '';
+    tier = 'private';
     if (mode != 'private') {
       final want = _wantedPath();
       if (await canWrite(want)) {
         target = want;
-      } else {
-        isFallback = true;
-        statusNote = 'Cannot write to $want yet. Using the app folder for now. Allow storage access or choose another folder.';
+        tier = 'wanted';
+      } else if (mode == 'documents') {
+        final alt = await _appExternalDocuments();
+        if (alt.isNotEmpty && await canWrite('$alt/$appFolderName')) {
+          target = '$alt/$appFolderName';
+          tier = 'appdocs';
+        }
       }
     }
+    isFallback = mode != 'private' && tier != 'wanted';
     if (!isFallback) {
+      statusNote = '';
+    } else if (tier == 'appdocs') {
+      statusNote = 'The shared Documents folder needs storage permission. Saving in this app\'s own Documents folder on the TV for now: $target';
+    } else {
+      statusNote = 'Cannot write to ${_wantedPath()}. Using the hidden app folder for now. Choose a folder or a USB drive below.';
+    }
+    if (tier != 'private' || mode == 'private') {
       if (lastRoot.isNotEmpty && lastRoot != target) await _migrate(lastRoot, target);
       lastRoot = target;
     }
@@ -211,26 +232,14 @@ class StorageLocation {
   }
 
   // ------------------------------------------------------------ permissions
+  /// True when the shared Documents folder can be written right now.
+  /// (Android only shows a permission screen from the TV's own Settings.)
   static Future<bool> hasAccess() async {
     if (!Platform.isAndroid) return true;
-    try {
-      return await Permission.manageExternalStorage.isGranted || await Permission.storage.isGranted;
-    } catch (_) {
-      return false;
-    }
+    return canWrite('$sharedDocuments/$appFolderName');
   }
 
-  static Future<bool> requestAccess() async {
-    if (!Platform.isAndroid) return true;
-    try {
-      final a = await Permission.storage.request();
-      if (a.isGranted) return true;
-      final b = await Permission.manageExternalStorage.request();
-      return b.isGranted;
-    } catch (_) {
-      return false;
-    }
-  }
+  static Future<bool> requestAccess() => hasAccess();
 
   // ----------------------------------------------------------------- drives
   static Future<List<DriveInfo>> drives() async {
