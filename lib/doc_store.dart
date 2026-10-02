@@ -1,17 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'storage_location.dart';
 
-/// Every game saves its data as plain JSON files inside the app's
-/// Documents folder on the TV:  <Documents>/KidsSuperApp/
+/// Every game saves its data as plain JSON files in the folder chosen in
+/// Settings > Storage location (default: Documents/KidsSuperApp on the TV):
 ///   data/app_kv.json         settings + spelling cards
 ///   quizzes/<id>.json        one file per quiz set
 ///   quiz/progress.json       best scores
 ///   math/profiles.json       children
 ///   math/progress.json       maths report card
-/// (photos for spelling cards stay in <Documents>/custom_cards)
+///   photos/                  spelling card photos
 class DocStore {
   DocStore._();
   static Directory? _root;
@@ -19,9 +19,7 @@ class DocStore {
   static Future<Directory> root() async {
     final cached = _root;
     if (cached != null) return cached;
-    final docs = await getApplicationDocumentsDirectory();
-    final d = Directory('${docs.path}/KidsSuperApp');
-    if (!await d.exists()) await d.create(recursive: true);
+    final d = await StorageLocation.rootDir(); // Documents/KidsSuperApp by default
     _root = d;
     return d;
   }
