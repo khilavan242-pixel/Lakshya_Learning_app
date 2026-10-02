@@ -4,9 +4,11 @@ import 'core_audio_models.dart';
 import 'home_screen.dart';
 import 'math_game.dart';
 import 'players.dart';
+import 'storage_location.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await StorageLocation.init(); // decides where all data is saved (Documents by default)
   await GameAudioService.instance.init();
   await CardStore.init(); // also moves old SharedPreferences data into the Documents folder
   await PlayerStore.init(); // children, per-child settings and learning memory
