@@ -7,6 +7,8 @@ import 'players.dart';
 import 'quiz_game.dart';
 import 'speech_service.dart';
 import 'spelling_game.dart';
+import 'storage_location.dart';
+import 'storage_ui.dart';
 
 /// The "super app" home: pick a game mode, change player, open Settings.
 class HomeScreen extends StatefulWidget {
@@ -24,6 +26,11 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     DocStore.root().then((dir) {
       if (mounted) setState(() => _savePath = dir.path);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && StorageLocation.isFallback && StorageLocation.mode == 'documents') {
+        offerDocumentsFolder(context);
+      }
     });
     if (!_greeted) {
       _greeted = true;
