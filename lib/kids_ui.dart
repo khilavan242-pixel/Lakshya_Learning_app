@@ -190,6 +190,7 @@ class TVFocusable extends StatefulWidget {
   final VoidCallback? onPressed;
   final bool autofocus;
   final double scale;
+  final int debounceMs; // ignore repeated clicks closer together than this
   final Widget Function(BuildContext context, bool focused) builder;
 
   const TVFocusable({
@@ -198,6 +199,7 @@ class TVFocusable extends StatefulWidget {
     required this.builder,
     this.autofocus = false,
     this.scale = 1.1,
+    this.debounceMs = 450,
   });
 
   @override
@@ -214,9 +216,20 @@ class _TVFocusableState extends State<TVFocusable> {
     super.dispose();
   }
 
+  static DateTime _globalLast = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// One physical click can arrive twice (mouse click + a key event from the TV,
+  /// or accidental double clicks). Repeats inside a short window are ignored.
   void _activate() {
     final cb = widget.onPressed;
-    if (cb != null) cb();
+    if (cb == null) return;
+    final now = DateTime.now();
+    if (now.difference(_last).inMilliseconds < widget.debounceMs) return;
+    if (now.difference(_globalLast).inMilliseconds < 250) return;
+    _last = now;
+    _globalLast = now;
+    cb();
   }
 
   @override
