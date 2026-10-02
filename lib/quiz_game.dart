@@ -6,12 +6,14 @@ import 'core_audio_models.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'phone_manager.dart';
+import 'players.dart';
 import 'quiz_model.dart';
 import 'speech_service.dart';
 
 // ======================================================================
 // QUIZ GAME UI: choose (4 options), true/false, one-word, fill-in-the-blank,
 // matching.  English + Hindi text-to-speech, on-screen Hindi/English keyboard.
+// Smart play: mastered questions stop showing, difficult ones come back.
 // ======================================================================
 
 class QuizPrefs {
@@ -32,6 +34,7 @@ class QuizPrefs {
 }
 
 void _quizSfx(bool good) {
+  if (!PlayerStore.active.sound) return;
   if (good) {
     GameAudioService.instance.playSuccessFanfare();
   } else {
@@ -39,8 +42,42 @@ void _quizSfx(bool good) {
   }
 }
 
+/// One question to ask (a question may be asked again later = repeat).
+class QuizItem {
+  final String quizId;
+  final QuizQuestion q;
+  final bool repeat;
+  const QuizItem(this.quizId, this.q, {this.repeat = false});
+  String get key => 'quiz:$quizId:${q.question}';
+}
+
+String _itemKey(QuizItem i) => i.key;
+
+List<QuizItem> _itemsForSet(QuizSet set) {
+  var items = set.questions.map((QuizQuestion q) => QuizItem(set.id, q)).toList();
+  if (PlayerStore.active.smart) {
+    final remaining = Mastery.notMastered<QuizItem>(items, _itemKey);
+    if (remaining.isNotEmpty) items = remaining; // everything mastered -> revision round with all
+  }
+  if (QuizPrefs.shuffle) items.shuffle();
+  return items;
+}
+
+/// Master Play: every question the child has not mastered yet (3 clean answers in a row),
+/// hardest first. Returns an empty list when everything is mastered.
+List<QuizItem> _masterItems(List<QuizSet> sets) {
+  final all = <QuizItem>[];
+  for (final set in sets) {
+    for (final q in set.questions) {
+      all.add(QuizItem(set.id, q));
+    }
+  }
+  final pool = Mastery.notMastered<QuizItem>(all, _itemKey);
+  return Mastery.smartPick<QuizItem>(pool, _itemKey, PlayerStore.active.rounds);
+}
+
 // ----------------------------------------------------------------------
-// QUIZ HOME (list of quiz sets)
+// QUIZ HOME (list of quiz sets for the active player)
 // ----------------------------------------------------------------------
 class QuizHomeScreen extends StatefulWidget {
   const QuizHomeScreen({super.key});
@@ -61,18 +98,23 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
 
   Future<void> _reload() async {
     await QuizPrefs.load();
-    final sets = await QuizStore.loadAll();
+    final all = await QuizStore.loadAll();
+    final allowed = PlayerStore.active.quizIds;
+    final sets = allowed == null ? all : all.where((QuizSet q) => allowed.contains(q.id)).toList();
     final best = await QuizStore.bestScores();
     if (!mounted) return;
     setState(() {
-      _sets = sets;
+      _sets = sets.isEmpty ? all : sets;
       _best = best;
       _loaded = true;
     });
   }
 
-  Future<void> _play(QuizSet set) async {
-    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => QuizPlayScreen(quiz: set)));
+  Future<void> _play(String title, String emoji, String scoreId, List<QuizItem> Function() builder, {bool master = false}) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => QuizPlayScreen(title: title, emoji: emoji, scoreId: scoreId, builder: builder, master: master)),
+    );
     _reload();
   }
 
@@ -88,19 +130,40 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
       );
     } else {
       final tiles = <Widget>[];
+      var pending = 0;
+      for (final set in _sets) {
+        for (final q in set.questions) {
+          if (!Mastery.isMastered('quiz:${set.id}:${q.question}')) pending++;
+        }
+      }
+      tiles.add(BigTile(
+        emoji: '🏆',
+        title: 'Master Play',
+        subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
+        colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
+        s: s,
+        width: 230,
+        height: 180,
+        autofocus: true,
+        onPressed: () => _play('Master Play', '🏆', 'master', () => _masterItems(_sets), master: true),
+      ));
       for (var i = 0; i < _sets.length; i++) {
-        final q = _sets[i];
-        final best = _best[q.id];
+        final set = _sets[i];
+        final best = _best[set.id];
+        final mastered = Mastery.masteredIn<QuizQuestion>(set.questions, (QuizQuestion q) => 'quiz:${set.id}:${q.question}');
+        final extra = <String>[];
+        if (mastered > 0) extra.add('✅ $mastered');
+        if (best != null) extra.add('best $best%');
         tiles.add(BigTile(
-          emoji: q.emoji,
-          title: q.title,
-          subtitle: '${q.questions.length} questions${best != null ? '  •  best $best%' : ''}',
+          emoji: set.emoji,
+          title: set.title,
+          subtitle: '${set.questions.length} questions${extra.isEmpty ? '' : '  •  ${extra.join('  ')}'}',
           colors: kTopicGradients[i % kTopicGradients.length],
           s: s,
           width: 230,
           height: 180,
-          autofocus: i == 0,
-          onPressed: () => _play(q),
+          autofocus: false,
+          onPressed: () => _play(set.title, set.emoji, set.id, () => _itemsForSet(set)),
         ));
       }
       body = Center(
@@ -153,7 +216,7 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
 }
 
 // ----------------------------------------------------------------------
-// ON-SCREEN KEYBOARD (English + Hindi) for typed answers
+// ON-SCREEN KEYBOARD (English + Hindi). Key size adapts to the free space.
 // ----------------------------------------------------------------------
 class _KeyDef {
   final String label;
@@ -169,7 +232,7 @@ List<List<_KeyDef>> _buildRows(List<String> rows) {
       if (token.isEmpty) continue;
       final r = token.runes.first;
       final isMark = (r >= 0x0900 && r <= 0x0903) || (r >= 0x093E && r <= 0x094D) || r == 0x093C;
-      keys.add(_KeyDef(isMark ? '\u25CC$token' : token, token));
+      keys.add(_KeyDef(isMark ? '\u0915$token' : token, token));
     }
     out.add(keys);
   }
@@ -209,11 +272,11 @@ class OnScreenKeyboard extends StatelessWidget {
     required this.onToggleLanguage,
   });
 
-  Widget _key(String label, VoidCallback onTap, {double wFactor = 1.0, Color color = const Color(0xFF3B82F6)}) {
-    final k = (hindi ? 36.0 : 42.0) * s;
+  Widget _key(double k, String label, VoidCallback onTap, {double wFactor = 1.0, Color color = const Color(0xFF3B82F6)}) {
     return TVFocusable(
+      debounceMs: 300,
       onPressed: onTap,
-      scale: 1.15,
+      scale: 1.12,
       builder: (BuildContext context, bool focused) => AnimatedContainer(
         duration: const Duration(milliseconds: 100),
         width: k * wFactor,
@@ -221,7 +284,7 @@ class OnScreenKeyboard extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: focused ? Colors.amberAccent : color,
-          borderRadius: BorderRadius.circular(10 * s),
+          borderRadius: BorderRadius.circular(k * 0.22),
           border: Border.all(color: focused ? Colors.white : Colors.white30, width: focused ? 3 : 1.5),
         ),
         child: Text(label, style: kidText(k * 0.5, c: focused ? Colors.black87 : Colors.white)),
@@ -229,31 +292,59 @@ class OnScreenKeyboard extends StatelessWidget {
     );
   }
 
+  double _units(List<_KeyDef> row) {
+    var u = 0.0;
+    for (final d in row) {
+      u += d.value.runes.length > 2 ? 1.5 : 1.0;
+    }
+    return u;
+  }
+
   @override
   Widget build(BuildContext context) {
     final rows = hindi ? _hindiRows : _englishRows;
-    final gap = 5.0 * s;
-    final lines = <Widget>[];
-    for (final row in rows) {
-      lines.add(Wrap(
-        alignment: WrapAlignment.center,
-        spacing: gap,
-        runSpacing: gap,
-        children: row.map((_KeyDef d) => _key(d.label, () => onKey(d.value), wFactor: d.value.runes.length > 2 ? 1.5 : 1.0)).toList(),
+    return LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
+      final gap = 4.0 * s;
+      final lineCount = rows.length + 1;
+      var maxUnits = 7.6;
+      for (final row in rows) {
+        final u = _units(row);
+        if (u > maxUnits) maxUnits = u;
+      }
+      final w = box.maxWidth.isFinite ? box.maxWidth : 800.0;
+      final h = box.maxHeight.isFinite ? box.maxHeight : 400.0;
+      final byW = (w - gap * (maxUnits + 1)) / maxUnits;
+      final byH = (h - gap * (lineCount + 1)) / lineCount;
+      final k = math.max(20.0, math.min(math.min(byW, byH), 54.0 * s));
+
+      final lines = <Widget>[];
+      for (final row in rows) {
+        lines.add(Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final d in row)
+              Padding(
+                padding: EdgeInsets.all(gap / 2),
+                child: _key(k, d.label, () => onKey(d.value), wFactor: d.value.runes.length > 2 ? 1.5 : 1.0),
+              ),
+          ],
+        ));
+      }
+      lines.add(Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, 'SPACE', () => onKey(' '), wFactor: 4.0, color: const Color(0xFF6366F1))),
+          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, '⌫', onBackspace, wFactor: 1.8, color: const Color(0xFFEF4444))),
+          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, hindi ? 'EN' : 'हिं', onToggleLanguage, wFactor: 1.8, color: const Color(0xFF22C55E))),
+        ],
       ));
-      lines.add(SizedBox(height: gap));
-    }
-    lines.add(Wrap(
-      alignment: WrapAlignment.center,
-      spacing: gap,
-      runSpacing: gap,
-      children: [
-        _key('SPACE', () => onKey(' '), wFactor: 4.0, color: const Color(0xFF6366F1)),
-        _key('⌫', onBackspace, wFactor: 1.8, color: const Color(0xFFEF4444)),
-        _key(hindi ? 'EN' : 'हिं', onToggleLanguage, wFactor: 1.8, color: const Color(0xFF22C55E)),
-      ],
-    ));
-    return Column(mainAxisSize: MainAxisSize.min, children: lines);
+      return Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(mainAxisSize: MainAxisSize.min, children: lines),
+        ),
+      );
+    });
   }
 }
 
@@ -261,14 +352,29 @@ class OnScreenKeyboard extends StatelessWidget {
 // PLAY SCREEN
 // ----------------------------------------------------------------------
 class QuizPlayScreen extends StatefulWidget {
-  final QuizSet quiz;
-  const QuizPlayScreen({super.key, required this.quiz});
+  final String title;
+  final String emoji;
+  final String scoreId;
+  final List<QuizItem> Function() builder;
+  final bool master; // master play: continue round after round until everything is mastered
+  const QuizPlayScreen({
+    super.key,
+    required this.title,
+    required this.emoji,
+    required this.scoreId,
+    required this.builder,
+    this.master = false,
+  });
   @override
   State<QuizPlayScreen> createState() => _QuizPlayScreenState();
 }
 
 class _QuizPlayScreenState extends State<QuizPlayScreen> {
-  late List<QuizQuestion> _qs;
+  List<QuizItem> _items = <QuizItem>[];
+  final Map<String, int> _repeatCount = <String, int>{};
+  int _baseCount = 0;
+  int _needPractice = 0;
+  bool _moreLeft = false;
   int _i = 0;
   int _correct = 0;
   bool _locked = false;
@@ -296,11 +402,8 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   @override
   void initState() {
     super.initState();
-    QuizPrefs.load().then((_) {
-      if (mounted) _start();
-    });
-    _qs = List<QuizQuestion>.from(widget.quiz.questions);
-    _resetQuestion();
+    _begin();
+    _autoSpeak();
   }
 
   @override
@@ -309,25 +412,29 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     super.dispose();
   }
 
-  void _start() {
-    setState(() {
-      _qs = List<QuizQuestion>.from(widget.quiz.questions);
-      if (QuizPrefs.shuffle) _qs.shuffle();
-      _i = 0;
-      _correct = 0;
-      _finished = false;
-      _resetQuestion();
-    });
+  void _begin() {
+    _items = widget.builder();
+    _repeatCount.clear();
+    _baseCount = _items.length;
+    _needPractice = 0;
+    _i = 0;
+    _correct = 0;
+    _finished = false;
+    if (_items.isNotEmpty) _resetQuestion();
+  }
+
+  void _restart() {
+    setState(_begin);
     _autoSpeak();
   }
 
-  QuizQuestion get _q => _qs[_i];
+  QuizQuestion get _q => _items[_i].q;
 
   void _resetQuestion() {
-    final q = _qs[_i];
+    final q = _items[_i].q;
     _locked = false;
     _firstTry = true;
-    _message = '';
+    _message = _items[_i].repeat ? '🔁 Let\'s try this one again!' : '';
     _wrongPos.clear();
     _rightPos = -1;
     _typed = '';
@@ -359,11 +466,12 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   }
 
   void _autoSpeak() {
-    if (QuizPrefs.speak) _say(withOptions: false);
+    if (_items.isEmpty) return;
+    if (QuizPrefs.speak && PlayerStore.active.speak) _say(withOptions: false);
   }
 
   void _say({bool withOptions = true}) {
-    if (_finished) return;
+    if (_finished || _items.isEmpty) return;
     final q = _q;
     final parts = <String>[_spoken(q.question)];
     if (withOptions && q.isChoice) {
@@ -382,7 +490,40 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     if (QuizPrefs.speak && text.isNotEmpty) Speaker.instance.speak(text);
   }
 
-  // ------------------------------------------------------ answering
+  // ------------------------------------------------------ remembering
+  String _answerText(QuizQuestion q) {
+    if (q.type == 'tf') {
+      final hi = Speaker.isHindi(q.question);
+      return q.correctIndex == 0 ? (hi ? 'सही' : 'True') : (hi ? 'गलत' : 'False');
+    }
+    if (q.isChoice) return q.options[q.correctIndex];
+    if (q.answers.isNotEmpty) return q.answers.first;
+    return '';
+  }
+
+  void _requeue(QuizItem item, int gap) {
+    final used = _repeatCount[item.key] ?? 0;
+    final cap = widget.master ? 5 : 2;
+    if (used >= cap) return;
+    _repeatCount[item.key] = used + 1;
+    final at = math.min(_items.length, _i + gap);
+    _items.insert(at, QuizItem(item.quizId, item.q, repeat: true));
+  }
+
+  /// Called once when a question is finished. Right at the first try without help = clean.
+  /// Not clean -> it comes back a few questions later (and in later rounds) until learned.
+  void _finishQuestion({required bool clean}) {
+    final item = _items[_i];
+    Mastery.record(item.key, clean: clean);
+    if (clean) {
+      if (!item.repeat) _correct++;
+      if (widget.master && !Mastery.isMastered(item.key)) _requeue(item, 6);
+      return;
+    }
+    _needPractice++;
+    _requeue(item, 4);
+  }
+
   void _scheduleNext(int ms) {
     final token = _token;
     Future<void>.delayed(Duration(milliseconds: ms), () {
@@ -392,16 +533,32 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
 
   void _markCorrect() {
     _quizSfx(true);
-    if (_firstTry) _correct++;
     final q = _q;
+    final clean = _firstTry;
+    _finishQuestion(clean: clean);
+    final remember = clean ? '' : '  Remember: ${_answerText(q)}';
     setState(() {
       _locked = true;
-      _message = q.explanation.isNotEmpty ? '🎉 ${q.explanation}' : '🎉 Correct!';
+      _message = q.explanation.isNotEmpty ? '🎉 ${q.explanation}$remember' : (clean ? '🎉 Correct!' : '👍 Good!$remember');
     });
-    _speakFeedback(q.explanation);
-    _scheduleNext(q.explanation.isNotEmpty ? 3200 : 1200);
+    _speakFeedback(q.explanation.isNotEmpty ? q.explanation : (clean ? '' : _answerText(q)));
+    _scheduleNext(q.explanation.isNotEmpty ? 3400 : (clean ? 1200 : 2400));
   }
 
+  void _revealAndNext(String shown) {
+    final q = _q;
+    _quizSfx(false);
+    _firstTry = false;
+    _finishQuestion(clean: false);
+    setState(() {
+      _locked = true;
+      _message = shown;
+    });
+    _speakFeedback(_answerText(q));
+    _scheduleNext(2800);
+  }
+
+  // ------------------------------------------------------ answering
   void _pickChoice(int pos) {
     if (_locked || _finished || pos < 0 || pos >= _order.length || _wrongPos.contains(pos)) return;
     CardStore.keyClick();
@@ -409,14 +566,43 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     if (_order[pos] == q.correctIndex) {
       setState(() => _rightPos = pos);
       _markCorrect();
-    } else {
+    } else if (PlayerStore.active.retries) {
       _quizSfx(false);
       setState(() {
         _wrongPos.add(pos);
         _firstTry = false;
         _message = 'Try again 🙂';
       });
+    } else {
+      setState(() {
+        _wrongPos.add(pos);
+        _rightPos = _order.indexOf(q.correctIndex);
+      });
+      _revealAndNext('Answer: ${_answerText(q)}');
     }
+  }
+
+  void _hintChoice() {
+    if (_locked || _finished || !PlayerStore.active.hints) return;
+    final q = _q;
+    if (!q.isChoice) return;
+    var wrongLeft = 0;
+    var target = -1;
+    for (var pos = 0; pos < _order.length; pos++) {
+      if (_order[pos] != q.correctIndex && !_wrongPos.contains(pos)) {
+        wrongLeft++;
+        if (target < 0) target = pos;
+      }
+    }
+    if (target < 0 || wrongLeft < 2) {
+      setState(() => _message = '💡 It is one of the last choices!');
+      return;
+    }
+    setState(() {
+      _wrongPos.add(target);
+      _firstTry = false;
+      _message = '💡 That one is not the answer';
+    });
   }
 
   static String _norm(String t) {
@@ -430,17 +616,19 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final ok = _q.answers.any((String a) => _norm(a) == t);
     if (ok) {
       _markCorrect();
-    } else {
+    } else if (PlayerStore.active.retries) {
       _quizSfx(false);
       setState(() {
         _firstTry = false;
         _message = 'Not quite - try again 🙂';
       });
+    } else {
+      _revealAndNext('Answer: ${_answerText(_q)}');
     }
   }
 
-  void _hint() {
-    if (_locked || _finished) return;
+  void _hintTyped() {
+    if (_locked || _finished || !PlayerStore.active.hints) return;
     final q = _q;
     final answer = q.answers.isNotEmpty ? q.answers.first : '';
     _hintLevel++;
@@ -458,15 +646,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
 
   void _skip() {
     if (_locked || _finished) return;
-    final q = _q;
-    setState(() {
-      _locked = true;
-      _firstTry = false;
-      _message = q.answers.isNotEmpty ? 'Answer: ${q.answers.first}' : '';
-    });
-    _quizSfx(false);
-    _speakFeedback(q.answers.isNotEmpty ? q.answers.first : '');
-    _scheduleNext(2400);
+    _revealAndNext('Answer: ${_answerText(_q)}');
   }
 
   void _typeKey(String v) {
@@ -523,13 +703,15 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   }
 
   void _next() {
-    if (_i + 1 >= _qs.length) {
-      QuizStore.recordScore(widget.quiz.id, _correct, _qs.length);
+    if (_i + 1 >= _items.length) {
+      QuizStore.recordScore(widget.scoreId, _correct, _baseCount);
+      final more = widget.master && widget.builder().isNotEmpty;
       setState(() {
+        _moreLeft = more;
         _finished = true;
         _token++;
       });
-      if (_correct * 2 >= _qs.length) _quizSfx(true);
+      if (_baseCount > 0 && _correct * 2 >= _baseCount) _quizSfx(true);
       return;
     }
     setState(() {
@@ -540,7 +722,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   }
 
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
-    if (event is KeyUpEvent || _finished) return KeyEventResult.ignored;
+    if (event is KeyUpEvent || _finished || _items.isEmpty) return KeyEventResult.ignored;
     final k = event.logicalKey;
     final q = _q;
     if (k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete) {
@@ -578,15 +760,14 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   }
 
   // ------------------------------------------------------ UI pieces
-  Widget _questionText(double s, Size size) {
-    final q = _q;
-    final text = q.question;
+  Widget _questionText(double s) {
+    final text = _q.question;
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8 * s),
+      padding: EdgeInsets.symmetric(vertical: 6 * s),
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: kidText(text.length > 70 ? 26 * s : (text.length > 35 ? 32 * s : 40 * s)),
+        style: kidText(text.length > 70 ? 24 * s : (text.length > 35 ? 30 * s : 38 * s)),
       ),
     );
   }
@@ -644,52 +825,82 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     return Wrap(alignment: WrapAlignment.center, spacing: 16 * s, runSpacing: 14 * s, children: widgets);
   }
 
-  Widget _typedArea(double s, Size size) {
+  /// Typed answers: question + answer box + buttons on the left, keyboard on the right.
+  /// Everything fits on one screen (no scrolling, nothing hidden).
+  Widget _typedLayout(double s) {
+    final q = _q;
     final shown = _typed.isEmpty ? (_hindiKb ? 'उत्तर लिखें…' : 'Type your answer…') : _typed;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: math.min(size.width * 0.8, 760 * s),
-          padding: EdgeInsets.symmetric(horizontal: 18 * s, vertical: 10 * s),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.25),
-            borderRadius: BorderRadius.circular(18 * s),
-            border: Border.all(color: Colors.white70, width: 2),
+    final hints = PlayerStore.active.hints;
+    return LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
+      final leftW = box.maxWidth * 0.36;
+      return Row(
+        children: [
+          SizedBox(
+            width: leftW,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: SizedBox(
+                      width: leftW,
+                      child: Text(q.question, textAlign: TextAlign.center, style: kidText(q.question.length > 60 ? 24 * s : 30 * s)),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 6 * s),
+                SizedBox(
+                  height: 30 * s,
+                  width: leftW,
+                  child: FittedBox(fit: BoxFit.scaleDown, child: Text(_message, textAlign: TextAlign.center, style: kidText(20 * s))),
+                ),
+                Container(
+                  width: leftW,
+                  padding: EdgeInsets.symmetric(horizontal: 12 * s, vertical: 8 * s),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.25),
+                    borderRadius: BorderRadius.circular(16 * s),
+                    border: Border.all(color: Colors.white70, width: 2),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(shown, textAlign: TextAlign.center, style: kidText(30 * s, c: _typed.isEmpty ? Colors.white60 : Colors.white)),
+                  ),
+                ),
+                SizedBox(height: 8 * s),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 10 * s,
+                  runSpacing: 8 * s,
+                  children: [
+                    ActionButton(s: s, icon: Icons.check_circle_rounded, label: 'Check', color: const Color(0xFF22C55E), onPressed: _check),
+                    if (hints) ActionButton(s: s, icon: Icons.lightbulb_rounded, label: 'Hint', color: const Color(0xFFF59E0B), onPressed: _hintTyped),
+                    ActionButton(s: s, icon: Icons.skip_next_rounded, label: 'Skip', color: const Color(0xFF6366F1), onPressed: _skip),
+                  ],
+                ),
+              ],
+            ),
           ),
-          child: Text(
-            shown,
-            textAlign: TextAlign.center,
-            style: kidText(34 * s, c: _typed.isEmpty ? Colors.white60 : Colors.white),
+          SizedBox(width: 12 * s),
+          Expanded(
+            child: OnScreenKeyboard(
+              hindi: _hindiKb,
+              s: s,
+              onKey: _typeKey,
+              onBackspace: _backspace,
+              onToggleLanguage: () => setState(() => _hindiKb = !_hindiKb),
+            ),
           ),
-        ),
-        SizedBox(height: 8 * s),
-        OnScreenKeyboard(
-          hindi: _hindiKb,
-          s: s,
-          onKey: _typeKey,
-          onBackspace: _backspace,
-          onToggleLanguage: () => setState(() => _hindiKb = !_hindiKb),
-        ),
-        SizedBox(height: 8 * s),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 14 * s,
-          runSpacing: 8 * s,
-          children: [
-            ActionButton(s: s, icon: Icons.check_circle_rounded, label: 'Check', color: const Color(0xFF22C55E), onPressed: _check),
-            ActionButton(s: s, icon: Icons.lightbulb_rounded, label: 'Hint', color: const Color(0xFFF59E0B), onPressed: _hint),
-            ActionButton(s: s, icon: Icons.skip_next_rounded, label: 'Skip', color: const Color(0xFF6366F1), onPressed: _skip),
-          ],
-        ),
-      ],
-    );
+        ],
+      );
+    });
   }
 
   Widget _matchArea(double s, Size size) {
     final q = _q;
     final colW = (size.width - 64 * s - 60 * s) / 2;
-    Widget item(String text, Color color, bool focusedAllowed, VoidCallback onTap, {bool autofocus = false}) {
+    Widget item(String text, Color color, VoidCallback onTap, {bool autofocus = false}) {
       return TVFocusable(
         autofocus: autofocus,
         onPressed: onTap,
@@ -720,7 +931,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
       } else if (_selLeft == li) {
         c = const Color(0xFFF59E0B);
       }
-      left.add(Padding(padding: EdgeInsets.only(bottom: 10 * s), child: item(q.pairs[li][0], c, true, () => _pickLeft(index), autofocus: li == 0)));
+      left.add(Padding(padding: EdgeInsets.only(bottom: 10 * s), child: item(q.pairs[li][0], c, () => _pickLeft(index), autofocus: li == 0)));
     }
     for (var pos = 0; pos < _rightOrder.length; pos++) {
       final index = pos;
@@ -731,7 +942,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
       } else if (_flashRight == pos) {
         c = const Color(0xFFEF4444);
       }
-      right.add(Padding(padding: EdgeInsets.only(bottom: 10 * s), child: item(q.pairs[pairIdx][1], c, true, () => _pickRight(index))));
+      right.add(Padding(padding: EdgeInsets.only(bottom: 10 * s), child: item(q.pairs[pairIdx][1], c, () => _pickRight(index))));
     }
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -748,28 +959,68 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   Widget build(BuildContext context) {
     final s = uiScale(context);
     final size = MediaQuery.of(context).size;
-    final quiz = widget.quiz;
+    final title = '${widget.emoji} ${widget.title}';
+
+    if (_items.isEmpty) {
+      if (widget.master) {
+        return ScreenFrame(
+          title: title,
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('🏆', style: TextStyle(fontSize: 80 * s)),
+                Text('Everything is mastered!', style: kidText(40 * s)),
+                SizedBox(height: 6 * s),
+                Text('Amazing work, ${PlayerStore.active.name}!', style: kidText(24 * s)),
+                SizedBox(height: 22 * s),
+                ActionButton(s: s, icon: Icons.home_rounded, label: 'Back', color: const Color(0xFF5C6BC0), autofocus: true, onPressed: () => Navigator.maybePop(context)),
+              ],
+            ),
+          ),
+        );
+      }
+      return ScreenFrame(title: title, body: Center(child: Text('No questions available.', style: kidText(26 * s))));
+    }
 
     if (_finished) {
-      final ratio = _qs.isEmpty ? 0.0 : _correct / _qs.length;
+      final ratio = _baseCount == 0 ? 0.0 : _correct / _baseCount;
       final stars = ratio >= 0.9 ? 3 : (ratio >= 0.6 ? 2 : (ratio >= 0.3 ? 1 : 0));
       return ScreenFrame(
-        title: '${quiz.emoji} ${quiz.title}',
+        title: title,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(stars == 0 ? '💪' : ('⭐' * stars), style: TextStyle(fontSize: 70 * s)),
               SizedBox(height: 8 * s),
-              Text('$_correct / ${_qs.length} correct', style: kidText(42 * s)),
+              Text('$_correct / $_baseCount first-time correct', style: kidText(38 * s)),
+              if (_needPractice > 0)
+                Padding(
+                  padding: EdgeInsets.only(top: 8 * s),
+                  child: Text('🔁 $_needPractice question(s) will come back until you know them', style: kidText(20 * s, w: FontWeight.w600)),
+                ),
+              if (widget.master)
+                Padding(
+                  padding: EdgeInsets.only(top: 8 * s),
+                  child: Text(_moreLeft ? 'Keep going - master every question! 💪' : '🏆 Every question is mastered!', style: kidText(22 * s)),
+                ),
               SizedBox(height: 22 * s),
               Wrap(
                 spacing: 16 * s,
                 runSpacing: 10 * s,
                 alignment: WrapAlignment.center,
                 children: [
-                  ActionButton(s: s, icon: Icons.replay_rounded, label: 'Play Again', color: const Color(0xFF22C55E), autofocus: true, onPressed: _start),
-                  ActionButton(s: s, icon: Icons.home_rounded, label: 'Back', color: const Color(0xFF5C6BC0), onPressed: () => Navigator.maybePop(context)),
+                  if (!widget.master || _moreLeft)
+                    ActionButton(
+                      s: s,
+                      icon: widget.master ? Icons.arrow_forward_rounded : Icons.replay_rounded,
+                      label: widget.master ? 'Next Round' : 'Play Again',
+                      color: const Color(0xFF22C55E),
+                      autofocus: true,
+                      onPressed: _restart,
+                    ),
+                  ActionButton(s: s, icon: Icons.home_rounded, label: 'Back', color: const Color(0xFF5C6BC0), autofocus: widget.master && !_moreLeft, onPressed: () => Navigator.maybePop(context)),
                 ],
               ),
             ],
@@ -779,13 +1030,19 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     }
 
     final q = _q;
-    Widget area;
-    if (q.type == 'match') {
-      area = _matchArea(s, size);
-    } else if (q.isTyped) {
-      area = _typedArea(s, size);
+    Widget body;
+    if (q.isTyped) {
+      body = _typedLayout(s);
     } else {
-      area = _choiceArea(s, size);
+      final area = q.type == 'match' ? _matchArea(s, size) : _choiceArea(s, size);
+      body = Column(
+        children: [
+          _questionText(s),
+          SizedBox(height: 26 * s, child: Text(_message, textAlign: TextAlign.center, style: kidText(20 * s), overflow: TextOverflow.ellipsis)),
+          SizedBox(height: 6 * s),
+          Expanded(child: SingleChildScrollView(child: Center(child: area))),
+        ],
+      );
     }
 
     return Focus(
@@ -793,23 +1050,15 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
       skipTraversal: true,
       onKeyEvent: _handleKey,
       child: ScreenFrame(
-        title: '${quiz.emoji} ${quiz.title}',
+        title: title,
         actions: [
-          Text('${_i + 1}/${_qs.length}  ⭐$_correct', style: kidText(24 * s)),
-          SizedBox(width: 14 * s),
+          Text('${_i + 1}/${_items.length}  ⭐$_correct', style: kidText(24 * s)),
+          SizedBox(width: 12 * s),
+          if (q.isChoice && PlayerStore.active.hints) ActionButton(s: s, icon: Icons.lightbulb_rounded, label: 'Hint', color: const Color(0xFFF59E0B), onPressed: _hintChoice),
+          if (q.isChoice && PlayerStore.active.hints) SizedBox(width: 10 * s),
           ActionButton(s: s, icon: Icons.volume_up_rounded, label: 'Say', color: const Color(0xFF00ACC1), onPressed: _say),
         ],
-        body: SingleChildScrollView(
-          child: Column(
-            children: [
-              _questionText(s, size),
-              SizedBox(height: 26 * s, child: Text(_message, textAlign: TextAlign.center, style: kidText(20 * s), overflow: TextOverflow.ellipsis)),
-              SizedBox(height: 8 * s),
-              area,
-              SizedBox(height: 16 * s),
-            ],
-          ),
-        ),
+        body: body,
       ),
     );
   }
