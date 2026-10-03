@@ -129,21 +129,21 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
         child: Text('No quizzes yet.\nPress "Add Quiz" and send a JSON file from your phone.', textAlign: TextAlign.center, style: kidText(24 * s)),
       );
     } else {
-      final tiles = <Widget>[];
+      final tiles = <Widget Function(double, double)>[];
       var pending = 0;
       for (final set in _sets) {
         for (final q in set.questions) {
           if (!Mastery.isMastered('quiz:${set.id}:${q.question}')) pending++;
         }
       }
-      tiles.add(BigTile(
+      tiles.add((double w, double h) => BigTile(
         emoji: '🏆',
         title: 'Master Play',
         subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
         colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
         s: s,
-        width: 230,
-        height: 180,
+        width: w / s,
+        height: h / s,
         autofocus: true,
         onPressed: () => _play('Master Play', '🏆', 'master', () => _masterItems(_sets), master: true),
       ));
@@ -154,24 +154,19 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
         final extra = <String>[];
         if (mastered > 0) extra.add('✅ $mastered');
         if (best != null) extra.add('best $best%');
-        tiles.add(BigTile(
+        tiles.add((double w, double h) => BigTile(
           emoji: set.emoji,
           title: set.title,
           subtitle: '${set.questions.length} questions${extra.isEmpty ? '' : '  •  ${extra.join('  ')}'}',
           colors: kTopicGradients[i % kTopicGradients.length],
           s: s,
-          width: 230,
-          height: 180,
+          width: w / s,
+          height: h / s,
           autofocus: false,
           onPressed: () => _play(set.title, set.emoji, set.id, () => _itemsForSet(set)),
         ));
       }
-      body = Center(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(vertical: 12 * s),
-          child: Wrap(alignment: WrapAlignment.center, spacing: 22 * s, runSpacing: 22 * s, children: tiles),
-        ),
-      );
+      body = AdaptiveGrid(builders: tiles, aspect: 1.3, minWidth: 170 * s, maxWidth: 280 * s, gap: 20 * s);
     }
 
     return ScreenFrame(
@@ -212,139 +207,6 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
       ],
       body: body,
     );
-  }
-}
-
-// ----------------------------------------------------------------------
-// ON-SCREEN KEYBOARD (English + Hindi). Key size adapts to the free space.
-// ----------------------------------------------------------------------
-class _KeyDef {
-  final String label;
-  final String value;
-  const _KeyDef(this.label, this.value);
-}
-
-List<List<_KeyDef>> _buildRows(List<String> rows) {
-  final out = <List<_KeyDef>>[];
-  for (final row in rows) {
-    final keys = <_KeyDef>[];
-    for (final token in row.split(' ')) {
-      if (token.isEmpty) continue;
-      final r = token.runes.first;
-      final isMark = (r >= 0x0900 && r <= 0x0903) || (r >= 0x093E && r <= 0x094D) || r == 0x093C;
-      keys.add(_KeyDef(isMark ? '\u0915$token' : token, token));
-    }
-    out.add(keys);
-  }
-  return out;
-}
-
-final List<List<_KeyDef>> _englishRows = _buildRows(<String>[
-  '1 2 3 4 5 6 7 8 9 0',
-  'Q W E R T Y U I O P',
-  'A S D F G H J K L',
-  'Z X C V B N M',
-]);
-
-final List<List<_KeyDef>> _hindiRows = _buildRows(<String>[
-  'अ आ इ ई उ ऊ ऋ ए ऐ ओ औ अं अः',
-  'ा ि ी ु ू ृ े ै ो ौ ं ः ँ ्',
-  'क ख ग घ ङ च छ ज झ ञ',
-  'ट ठ ड ढ ण त थ द ध न',
-  'प फ ब भ म य र ल व श',
-  'ष स ह ळ क्ष त्र ज्ञ ड़ ढ़',
-  '0 1 2 3 4 5 6 7 8 9',
-]);
-
-class OnScreenKeyboard extends StatelessWidget {
-  final bool hindi;
-  final double s;
-  final ValueChanged<String> onKey;
-  final VoidCallback onBackspace;
-  final VoidCallback onToggleLanguage;
-
-  const OnScreenKeyboard({
-    super.key,
-    required this.hindi,
-    required this.s,
-    required this.onKey,
-    required this.onBackspace,
-    required this.onToggleLanguage,
-  });
-
-  Widget _key(double k, String label, VoidCallback onTap, {double wFactor = 1.0, Color color = const Color(0xFF3B82F6)}) {
-    return TVFocusable(
-      debounceMs: 300,
-      onPressed: onTap,
-      scale: 1.12,
-      builder: (BuildContext context, bool focused) => AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
-        width: k * wFactor,
-        height: k,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: focused ? Colors.amberAccent : color,
-          borderRadius: BorderRadius.circular(k * 0.22),
-          border: Border.all(color: focused ? Colors.white : Colors.white30, width: focused ? 3 : 1.5),
-        ),
-        child: Text(label, style: kidText(k * 0.5, c: focused ? Colors.black87 : Colors.white)),
-      ),
-    );
-  }
-
-  double _units(List<_KeyDef> row) {
-    var u = 0.0;
-    for (final d in row) {
-      u += d.value.runes.length > 2 ? 1.5 : 1.0;
-    }
-    return u;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final rows = hindi ? _hindiRows : _englishRows;
-    return LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
-      final gap = 4.0 * s;
-      final lineCount = rows.length + 1;
-      var maxUnits = 7.6;
-      for (final row in rows) {
-        final u = _units(row);
-        if (u > maxUnits) maxUnits = u;
-      }
-      final w = box.maxWidth.isFinite ? box.maxWidth : 800.0;
-      final h = box.maxHeight.isFinite ? box.maxHeight : 400.0;
-      final byW = (w - gap * (maxUnits + 1)) / maxUnits;
-      final byH = (h - gap * (lineCount + 1)) / lineCount;
-      final k = math.max(20.0, math.min(math.min(byW, byH), 54.0 * s));
-
-      final lines = <Widget>[];
-      for (final row in rows) {
-        lines.add(Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (final d in row)
-              Padding(
-                padding: EdgeInsets.all(gap / 2),
-                child: _key(k, d.label, () => onKey(d.value), wFactor: d.value.runes.length > 2 ? 1.5 : 1.0),
-              ),
-          ],
-        ));
-      }
-      lines.add(Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, 'SPACE', () => onKey(' '), wFactor: 4.0, color: const Color(0xFF6366F1))),
-          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, '⌫', onBackspace, wFactor: 1.8, color: const Color(0xFFEF4444))),
-          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, hindi ? 'EN' : 'हिं', onToggleLanguage, wFactor: 1.8, color: const Color(0xFF22C55E))),
-        ],
-      ));
-      return Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(mainAxisSize: MainAxisSize.min, children: lines),
-        ),
-      );
-    });
   }
 }
 
@@ -778,7 +640,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final isTf = q.type == 'tf';
     final hi = Speaker.isHindi(q.question);
     final cols = isTf ? 2 : (_order.length <= 4 ? 2 : 3);
-    final w = math.min(420.0 * s, (size.width - 64 * s - (cols - 1) * 16 * s) / cols);
+    final w = math.min(420.0 * s, (size.width - 88 * s - (cols - 1) * 16 * s) / cols);
     for (var pos = 0; pos < _order.length; pos++) {
       final index = pos;
       final orig = _order[pos];
@@ -899,7 +761,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
 
   Widget _matchArea(double s, Size size) {
     final q = _q;
-    final colW = (size.width - 64 * s - 60 * s) / 2;
+    final colW = (size.width - 88 * s - 60 * s) / 2;
     Widget item(String text, Color color, VoidCallback onTap, {bool autofocus = false}) {
       return TVFocusable(
         autofocus: autofocus,
