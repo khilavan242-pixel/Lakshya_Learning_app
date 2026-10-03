@@ -168,11 +168,7 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
           ),
         ),
         actions: [
-          ElevatedButton(
-            autofocus: true,
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Done', style: TextStyle(fontSize: 18 * s)),
-          ),
+          ActionButton(s: s, icon: Icons.check_rounded, label: 'Done', color: const Color(0xFF22C55E), autofocus: true, onPressed: () => Navigator.pop(ctx)),
         ],
       ),
     );
@@ -199,57 +195,49 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
         ),
       );
     } else {
-      final cards = <Widget>[];
+      final cards = <Widget Function(double, double)>[];
       final pending = Mastery.notMastered<WordCard>(_allWords, _spellKey).length;
-      cards.add(BigTile(
-        emoji: '🏆',
-        title: 'Master Play',
-        subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
-        colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
-        s: s,
-        width: 210,
-        height: 190,
-        autofocus: true,
-        onPressed: _masterPlay,
-      ));
+      cards.add((double w, double h) => BigTile(
+            emoji: '🏆',
+            title: 'Master Play',
+            subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
+            colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
+            s: s,
+            width: w / s,
+            height: h / s,
+            autofocus: true,
+            onPressed: _masterPlay,
+          ));
       for (var i = 0; i < keys.length; i++) {
         final topic = keys[i];
+        final index = i;
         final list = _topics[topic]!;
         final smart = PlayerStore.active.smart;
         final left = Mastery.notMastered<WordCard>(list, _spellKey).length;
         final done = list.length - left;
-        String? sub;
+        String sub = list.length == 1 ? '1 word' : '${list.length} words';
         if (smart) {
           sub = left == 0 ? '✅ all mastered' : '$left to learn${done > 0 ? '  •  ✅$done' : ''}';
         }
-        cards.add(TopicCard(
-          topic: topic,
-          count: list.length,
-          subtitle: sub,
-          colorIndex: i,
-          s: s,
-          autofocus: false,
-          onPressed: () => _playTopic(topic),
-        ));
+        cards.add((double w, double h) => BigTile(
+              emoji: emojiForTopic(topic),
+              title: topic,
+              subtitle: sub,
+              colors: kTopicGradients[index % kTopicGradients.length],
+              s: s,
+              width: w / s,
+              height: h / s,
+              onPressed: () => _playTopic(topic),
+            ));
       }
-      body = Center(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(vertical: 16 * s),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 24 * s,
-            runSpacing: 24 * s,
-            children: cards,
-          ),
-        ),
-      );
+      body = AdaptiveGrid(builders: cards, aspect: 1.15, minWidth: 150 * s, maxWidth: 250 * s, gap: 20 * s);
     }
 
     return Scaffold(
       body: KidsBackground(
         child: SafeArea(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(32 * s, 12 * s, 32 * s, 0),
+            padding: tvPadding(s),
             child: Column(
               children: [
                 Row(
@@ -758,7 +746,7 @@ class _TVGameScreenState extends State<TVGameScreen> {
     final n = target.length;
 
     final poolGap = 12 * s;
-    final tile = ((size.width - 64 * s - (n - 1) * poolGap) / n).clamp(40.0, 76 * s).toDouble();
+    final tile = ((size.width - 88 * s - (n - 1) * poolGap) / n).clamp(40.0, 76 * s).toDouble();
     final repeatMsg = (_currentIndex < _isRepeat.length && _isRepeat[_currentIndex]) ? '🔁 Let\'s try this word again!' : '';
     final message = _solved ? ((_mistake || _hintUsed) ? '🌟 Remember: $target' : '🎉 Great job!') : (_wrong ? 'Oops! Try again 🙂' : repeatMsg);
 
@@ -782,7 +770,7 @@ class _TVGameScreenState extends State<TVGameScreen> {
         body: KidsBackground(
           child: SafeArea(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(32 * s, 12 * s, 32 * s, 0),
+              padding: tvPadding(s),
               child: Column(
                 children: [
                   Row(
@@ -843,7 +831,7 @@ class _TVGameScreenState extends State<TVGameScreen> {
                   ),
                   Wrap(alignment: WrapAlignment.center, spacing: poolGap, runSpacing: poolGap, children: pool),
                   SizedBox(height: 16 * s),
-                  Wrap(
+                  ButtonRow(
                     alignment: WrapAlignment.center,
                     spacing: 20 * s,
                     runSpacing: 10 * s,
