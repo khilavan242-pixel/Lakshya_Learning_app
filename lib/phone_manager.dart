@@ -69,11 +69,7 @@ Future<void> showPhoneManager(BuildContext context, {VoidCallback? onChanged, St
         ),
       ),
       actions: [
-        ElevatedButton(
-          autofocus: true,
-          onPressed: () => Navigator.pop(ctx),
-          child: Text('Done', style: TextStyle(fontSize: 18 * s)),
-        ),
+        ActionButton(s: s, icon: Icons.check_rounded, label: 'Done', color: const Color(0xFF22C55E), autofocus: true, onPressed: () => Navigator.pop(ctx)),
       ],
     ),
   );
