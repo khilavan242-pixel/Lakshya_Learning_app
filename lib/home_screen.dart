@@ -7,8 +7,6 @@ import 'players.dart';
 import 'quiz_game.dart';
 import 'speech_service.dart';
 import 'spelling_game.dart';
-import 'storage_location.dart';
-import 'storage_ui.dart';
 
 /// The "super app" home: pick a game mode, change player, open Settings.
 class HomeScreen extends StatefulWidget {
@@ -26,11 +24,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     DocStore.root().then((dir) {
       if (mounted) setState(() => _savePath = dir.path);
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && StorageLocation.isFallback && StorageLocation.mode == 'documents') {
-        offerDocumentsFolder(context);
-      }
     });
     if (!_greeted) {
       _greeted = true;
@@ -51,46 +44,46 @@ class _HomeScreenState extends State<HomeScreen> {
     final s = uiScale(context);
     final player = PlayerStore.active;
 
-    final tiles = <Widget>[
-      BigTile(
+    final tiles = <Widget Function(double, double)>[
+      (double w, double h) => BigTile(
         emoji: '✏️',
         title: 'Spelling',
         subtitle: 'Unscramble letters',
         colors: const <Color>[Color(0xFFFF9A44), Color(0xFFFC6076)],
         s: s,
-        width: 200,
-        height: 190,
+        width: w / s,
+        height: h / s,
         autofocus: true,
         onPressed: () => _go(const TopicLobbyScreen()),
       ),
-      BigTile(
+      (double w, double h) => BigTile(
         emoji: '🧮',
         title: 'Maths',
         subtitle: 'Grades, topics, tests',
         colors: const <Color>[Color(0xFF36D1DC), Color(0xFF5B86E5)],
         s: s,
-        width: 200,
-        height: 190,
+        width: w / s,
+        height: h / s,
         onPressed: () => _go(const MathHomeScreen()),
       ),
-      BigTile(
+      (double w, double h) => BigTile(
         emoji: '🧠',
         title: 'Quiz Time',
         subtitle: 'English & हिन्दी',
         colors: const <Color>[Color(0xFFB24592), Color(0xFFF15F79)],
         s: s,
-        width: 200,
-        height: 190,
+        width: w / s,
+        height: h / s,
         onPressed: () => _go(const QuizHomeScreen()),
       ),
-      BigTile(
+      (double w, double h) => BigTile(
         emoji: '📅',
         title: 'Daily Challenge',
         subtitle: "Today's maths quiz",
         colors: const <Color>[Color(0xFF56AB2F), Color(0xFFA8E063)],
         s: s,
-        width: 200,
-        height: 190,
+        width: w / s,
+        height: h / s,
         onPressed: () => _go(MathPlayScreen(topicId: '', grade: player.grade, mode: 'daily')),
       ),
     ];
@@ -99,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: KidsBackground(
         child: SafeArea(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(32 * s, 12 * s, 32 * s, 0),
+            padding: tvPadding(s),
             child: Column(
               children: [
                 Row(
@@ -137,16 +130,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 Text('Hi ${player.name}! What shall we play today?', style: kidText(22 * s, w: FontWeight.w600)),
-                Expanded(
-                  child: Center(
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.symmetric(vertical: 12 * s),
-                      child: Wrap(alignment: WrapAlignment.center, spacing: 18 * s, runSpacing: 18 * s, children: tiles),
-                    ),
-                  ),
-                ),
+                Expanded(child: AdaptiveGrid(builders: tiles, aspect: 1.1, minWidth: 150 * s, maxWidth: 270 * s, gap: 18 * s)),
                 if (_savePath.isNotEmpty)
-                  Text('Saved in: $_savePath', style: kidText(11 * s, w: FontWeight.w400), overflow: TextOverflow.ellipsis),
+                  Text('Saved in: $_savePath', style: kidText(13 * s, w: FontWeight.w400), overflow: TextOverflow.ellipsis),
                 SizedBox(height: size.height * 0.13),
               ],
             ),
