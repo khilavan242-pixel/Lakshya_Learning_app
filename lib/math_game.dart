@@ -643,22 +643,23 @@ class _MathHomeScreenState extends State<MathHomeScreen> {
     final baseIds = _tab == 0 ? (kGradeTopics[_grade] ?? <String>[]) : kMathTopics.map((MathTopic t) => t.id).toList();
     final topicIds = MathStore.allowedTopicIds(baseIds);
 
-    final tiles = <Widget>[];
+    final tiles = <Widget Function(double, double)>[];
     for (var i = 0; i < topicIds.length; i++) {
       final t = mathTopicById(topicIds[i]);
       final stats = MathStore.topicStats(t.id);
       final stars = ((stats['s'] ?? 0) as num).toInt();
-      tiles.add(BigTile(
-        emoji: t.emoji,
-        title: t.name,
-        subtitle: stars > 0 ? '⭐' * stars : null,
-        colors: t.colors,
-        s: s,
-        width: 170,
-        height: 128,
-        autofocus: i == 0,
-        onPressed: () => _play(t.id, 'practice'),
-      ));
+      final index = i;
+      tiles.add((double w, double h) => BigTile(
+            emoji: t.emoji,
+            title: t.name,
+            subtitle: stars > 0 ? '⭐' * stars : null,
+            colors: t.colors,
+            s: s,
+            width: w / s,
+            height: h / s,
+            autofocus: index == 0,
+            onPressed: () => _play(t.id, 'practice'),
+          ));
     }
 
     final gradeChips = <Widget>[];
@@ -709,15 +710,8 @@ class _MathHomeScreenState extends State<MathHomeScreen> {
               ...gradeChips,
             ],
           ),
-          Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(vertical: 10 * s),
-                child: Wrap(alignment: WrapAlignment.center, spacing: 14 * s, runSpacing: 14 * s, children: tiles),
-              ),
-            ),
-          ),
-          Wrap(
+          Expanded(child: AdaptiveGrid(builders: tiles, aspect: 1.3, minWidth: 130 * s, maxWidth: 230 * s, gap: 14 * s)),
+          ButtonRow(
             alignment: WrapAlignment.center,
             spacing: 14 * s,
             runSpacing: 8 * s,
@@ -1105,7 +1099,7 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
     final q = _questions[_index];
     final optionWidgets = <Widget>[];
     final cols = q.options.length <= 4 ? 2 : 3;
-    final optW = math.min(300.0 * s, (size.width - 64 * s - (cols - 1) * 16 * s) / cols);
+    final optW = math.min(300.0 * s, (size.width - 88 * s - (cols - 1) * 16 * s) / cols);
     for (var i = 0; i < q.options.length; i++) {
       final index = i;
       final isRight = _pickedRight == i;
