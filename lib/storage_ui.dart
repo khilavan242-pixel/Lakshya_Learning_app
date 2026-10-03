@@ -42,6 +42,10 @@ Future<void> showRestartDialog(BuildContext context, String where) async {
   );
 }
 
+/// Kept only so an older home_screen.dart still compiles while files are uploaded one by one.
+/// (Android cannot show a storage permission dialog without extra plugins, so this does nothing.)
+Future<void> offerDocumentsFolder(BuildContext context) async {}
+
 class StorageScreen extends StatefulWidget {
   const StorageScreen({super.key});
   @override
