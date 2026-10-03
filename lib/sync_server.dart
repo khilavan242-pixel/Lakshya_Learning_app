@@ -91,7 +91,7 @@ class TVSyncServer {
     final router = Router();
 
     router.get('/', (Request request) {
-      return Response.ok(_embeddedWebPageHtml, headers: {'content-type': 'text/html; charset=utf-8'});
+      return Response.ok(_embeddedWebPageHtml.replaceFirst('</body>', '$_pageCropHtml</body>'), headers: {'content-type': 'text/html; charset=utf-8'});
     });
 
     // ---- everything the phone page needs in one call
@@ -241,7 +241,7 @@ class TVSyncServer {
     });
 
     router.get('/offline', (Request request) {
-      return Response.ok(_offlinePageHtml.replaceAll('__TV_BASE__', ''), headers: {'content-type': 'text/html; charset=utf-8'});
+      return Response.ok(_offlinePageHtml.replaceAll('__TV_BASE__', '').replaceFirst('</body>', '$_pageCropHtml</body>'), headers: {'content-type': 'text/html; charset=utf-8'});
     });
 
     // same page as a downloadable file, with this TV's address built in
@@ -249,7 +249,7 @@ class TVSyncServer {
       final host = request.headers['host'] ?? '';
       final base = host.isEmpty ? '' : 'http://$host';
       return Response.ok(
-        _offlinePageHtml.replaceAll('__TV_BASE__', base),
+        _offlinePageHtml.replaceAll('__TV_BASE__', base).replaceFirst('</body>', '$_pageCropHtml</body>'),
         headers: {
           'content-type': 'text/html; charset=utf-8',
           'content-disposition': 'attachment; filename="KidsLearning_Offline.html"',
@@ -325,6 +325,182 @@ class TVSyncServer {
     _server = null;
   }
 
+  static const String _pageCropHtml = r'''
+<style>
+#pcOv{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#0b1220;z-index:400;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;flex-direction:column}
+#pcOv *{box-sizing:border-box}
+#pcOv .pcTop{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#1e3a8a}
+#pcOv .pcTop b{flex:1;font-size:16px}
+#pcOv button{border:0;border-radius:10px;font-weight:700;font-size:15px;color:#fff;background:#3b82f6;padding:10px 12px;cursor:pointer}
+#pcOv button.g{background:#16a34a}#pcOv button.r{background:#dc2626}#pcOv button.s{background:#475569}
+#pcOv .pcChips{display:flex;gap:6px;overflow-x:auto;padding:8px 8px 4px;background:#111c33}
+#pcOv .chip{flex:none;display:flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;border-radius:20px;background:#1f2a44;border:2px solid transparent;font-size:14px;cursor:pointer}
+#pcOv .chip.cur{border-color:#facc15;background:#334155}
+#pcOv .chip img{width:26px;height:26px;border-radius:50%;object-fit:cover}
+#pcOv .chip i{width:26px;height:26px;border-radius:50%;background:#475569;display:inline-block}
+#pcOv .pcWrap{flex:1;overflow:auto;position:relative;background:#000;-webkit-overflow-scrolling:touch}
+#pcOv .pcBox{position:relative;display:inline-block;line-height:0;cursor:crosshair}
+#pcOv .pcBox img{display:block;max-width:none}
+#pcOv .pcSel{position:absolute;border:3px solid #facc15;box-shadow:0 0 0 9999px rgba(0,0,0,.55);pointer-events:none;border-radius:4px}
+#pcOv .pcBar{padding:8px 10px;background:#111c33;display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center}
+#pcOv .pcBar canvas{width:64px;height:64px;border-radius:8px;background:#222;border:2px solid #facc15}
+#pcOv .pcHint{padding:6px 10px;text-align:center;font-size:13px;background:#0f172a;color:#cbd5e1}
+#pcOv .pcBtn{min-width:48px}
+</style>
+<div id="pcOv">
+  <div class="pcTop"><b id="pcTitle">Crop pictures from a page</b><button class="r" id="pcClose">&#10006; Close</button></div>
+  <div class="pcChips" id="pcChips"></div>
+  <div class="pcHint" id="pcHint">Step 1: choose a photo of the book page</div>
+  <div class="pcWrap" id="pcWrap" style="display:none"><div class="pcBox" id="pcBox"><img id="pcImg" alt=""><div class="pcSel" id="pcSel"></div></div></div>
+  <div id="pcStart" style="padding:30px 16px;text-align:center">
+    <button class="g" id="pcPick" style="font-size:18px;padding:16px 22px">&#128247; Choose / take page photo</button>
+    <p style="color:#94a3b8;font-size:14px;line-height:1.5">Take one photo of the whole page. Then, for each word, tap on its picture and press <b>Use</b>.</p>
+  </div>
+  <div class="pcBar" id="pcBar" style="display:none">
+    <canvas id="pcPrev" width="64" height="64"></canvas>
+    <button class="s pcBtn" id="pcL">&#9664;</button><button class="s pcBtn" id="pcU">&#9650;</button><button class="s pcBtn" id="pcD">&#9660;</button><button class="s pcBtn" id="pcR">&#9654;</button>
+    <button class="s pcBtn" id="pcMinus">&#8722; Size</button><button class="s pcBtn" id="pcPlus">&#43; Size</button>
+    <button class="s pcBtn" id="pcShape">&#9633; Square</button>
+    <button class="s pcBtn" id="pcZm">&#128269; &#8722;</button><button class="s pcBtn" id="pcZp">&#128269; &#43;</button>
+    <button class="g" id="pcUse" style="flex:1 1 140px;font-size:17px">&#10004; Use for ...</button>
+    <button class="s" id="pcSkip">Skip</button>
+    <button class="g" id="pcDone">Done</button>
+  </div>
+</div>
+<script>
+(function(){
+  var ov, words = [], results = [], cur = 0, cb = null;
+  var img = null, natW = 0, natH = 0;
+  var cx = 0.5, cy = 0.5, size = 0.22, shape = 0, zoom = 1;   // size = box width as a fraction of the image width
+  var SHAPES = [{n: "\u25A1 Square", a: 1}, {n: "\u25AD Wide", a: 4 / 3}, {n: "\u25AF Tall", a: 3 / 4}];
+  function g(id){ return document.getElementById(id); }
+
+  function boxDims(){   // box width/height as fractions of the image width/height
+    var a = SHAPES[shape].a;
+    var w = size, h = (size * natW / a) / natH;
+    if (w > 1){ w = 1; h = (w * natW / a) / natH; }
+    if (h > 1){ h = 1; w = (h * natH * a) / natW; }
+    return {w: w, h: h};
+  }
+  function clampPos(){
+    var d = boxDims();
+    cx = Math.min(1 - d.w / 2, Math.max(d.w / 2, cx));
+    cy = Math.min(1 - d.h / 2, Math.max(d.h / 2, cy));
+  }
+  function drawSel(){
+    if (!img) return;
+    clampPos();
+    var d = boxDims(), el = g("pcSel"), r = g("pcImg");
+    var W = r.clientWidth, H = r.clientHeight;
+    el.style.left = ((cx - d.w / 2) * W) + "px"; el.style.top = ((cy - d.h / 2) * H) + "px";
+    el.style.width = (d.w * W) + "px"; el.style.height = (d.h * H) + "px";
+    var c = g("pcPrev"), x = c.getContext("2d");
+    x.fillStyle = "#222"; x.fillRect(0, 0, 64, 64);
+    var sw = d.w * natW, sh = d.h * natH, sx = (cx - d.w / 2) * natW, sy = (cy - d.h / 2) * natH;
+    var k = Math.min(64 / sw, 64 / sh);
+    x.drawImage(img, sx, sy, sw, sh, (64 - sw * k) / 2, (64 - sh * k) / 2, sw * k, sh * k);
+  }
+  function chips(){
+    var box = g("pcChips"); box.innerHTML = "";
+    words.forEach(function(w, i){
+      var c = document.createElement("div"); c.className = "chip" + (i === cur ? " cur" : "");
+      var th;
+      if (results[i]){ th = document.createElement("img"); th.src = results[i]; } else { th = document.createElement("i"); }
+      var s = document.createElement("span"); s.textContent = w;
+      c.appendChild(th); c.appendChild(s);
+      c.onclick = function(){ cur = i; refresh(); };
+      box.appendChild(c);
+    });
+    var cc = box.children[cur]; if (cc && cc.scrollIntoView) cc.scrollIntoView({inline: "center", block: "nearest"});
+  }
+  function refresh(){
+    chips();
+    g("pcUse").innerHTML = "\u2714 Use for " + (words[cur] || "");
+    g("pcShape").textContent = SHAPES[shape].n;
+    g("pcHint").textContent = img ? ("Tap on the picture of  " + (words[cur] || "") + "  then press Use  (" + (cur + 1) + "/" + words.length + ")") : "Step 1: choose a photo of the book page";
+    drawSel();
+  }
+  function nextFree(from){
+    for (var k = 1; k <= words.length; k++){ var i = (from + k) % words.length; if (!results[i]) return i; }
+    return Math.min(words.length - 1, from + 1);
+  }
+  function finish(){
+    ov.style.display = "none"; document.body.style.overflow = "";
+    var f = cb; cb = null; img = null;
+    if (f) f(results);
+  }
+  function setZoom(z){
+    zoom = Math.min(5, Math.max(1, z));
+    var r = g("pcImg"), wrap = g("pcWrap");
+    r.style.width = (wrap.clientWidth * zoom) + "px";
+    setTimeout(drawSel, 30);
+  }
+  function loadFile(f){
+    var rd = new FileReader();
+    rd.onload = function(e){
+      var im = new Image();
+      im.onload = function(){
+        img = im; natW = im.naturalWidth || im.width; natH = im.naturalHeight || im.height;
+        g("pcImg").src = e.target.result;
+        g("pcStart").style.display = "none"; g("pcWrap").style.display = "block"; g("pcBar").style.display = "flex";
+        cx = 0.5; cy = 0.5; zoom = 1; setZoom(1); refresh();
+      };
+      im.src = e.target.result;
+    };
+    rd.readAsDataURL(f);
+  }
+  function cropNow(){
+    var d = boxDims();
+    var sw = d.w * natW, sh = d.h * natH, sx = (cx - d.w / 2) * natW, sy = (cy - d.h / 2) * natH;
+    var k = Math.min(1, 480 / Math.max(sw, sh));
+    var c = document.createElement("canvas"); c.width = Math.max(1, Math.round(sw * k)); c.height = Math.max(1, Math.round(sh * k));
+    c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.72);
+  }
+  function nudge(dx, dy){ var d = boxDims(); cx += dx * d.w * 0.12; cy += dy * d.h * 0.12; drawSel(); }
+
+  function init(){
+    ov = g("pcOv");
+    g("pcClose").onclick = finish;
+    g("pcDone").onclick = finish;
+    g("pcPick").onclick = function(){
+      var inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.style.display = "none";
+      inp.onchange = function(){ if (inp.files[0]) loadFile(inp.files[0]); document.body.removeChild(inp); };
+      document.body.appendChild(inp); inp.click();
+    };
+    g("pcBox").onclick = function(e){
+      if (!img) return;
+      var r = g("pcImg").getBoundingClientRect();
+      cx = (e.clientX - r.left) / r.width; cy = (e.clientY - r.top) / r.height; drawSel();
+    };
+    g("pcL").onclick = function(){ nudge(-1, 0); }; g("pcR").onclick = function(){ nudge(1, 0); };
+    g("pcU").onclick = function(){ nudge(0, -1); }; g("pcD").onclick = function(){ nudge(0, 1); };
+    g("pcPlus").onclick = function(){ size = Math.min(1, size * 1.12); drawSel(); };
+    g("pcMinus").onclick = function(){ size = Math.max(0.03, size / 1.12); drawSel(); };
+    g("pcShape").onclick = function(){ shape = (shape + 1) % SHAPES.length; refresh(); };
+    g("pcZp").onclick = function(){ setZoom(zoom * 1.4); };
+    g("pcZm").onclick = function(){ setZoom(zoom / 1.4); };
+    g("pcSkip").onclick = function(){ cur = nextFree(cur); refresh(); };
+    g("pcUse").onclick = function(){
+      if (!img || !words.length) return;
+      results[cur] = cropNow();
+      var done = results.filter(function(x){ return !!x; }).length;
+      if (done >= words.length){ finish(); return; }
+      cur = nextFree(cur); refresh();
+    };
+    window.addEventListener("resize", function(){ if (img) setZoom(zoom); });
+  }
+  window.openPageCrop = function(wordList, done){
+    if (!ov) init();
+    words = wordList.slice(); results = words.map(function(){ return null; }); cur = 0; cb = done; img = null;
+    g("pcStart").style.display = "block"; g("pcWrap").style.display = "none"; g("pcBar").style.display = "none";
+    ov.style.display = "flex"; document.body.style.overflow = "hidden";
+    refresh();
+  };
+})();
+</script>
+''';
+
   static const String _offlinePageHtml = r'''
 <!DOCTYPE html>
 <html lang="en">
@@ -394,6 +570,7 @@ a.dl{display:block;text-align:center;background:#7c3aed;color:#fff;text-decorati
     </div>
     <div class="box">
       <b>3. Words to save (<span id="dcnt">0</span>)</b>
+      <button class="b" id="pageCropBtn">&#128214; Crop pictures from a book page</button>
       <div id="drafts"></div>
       <button class="b green" id="saveWords">Save (send to TV when connected)</button>
     </div>
@@ -415,6 +592,8 @@ a.dl{display:block;text-align:center;background:#7c3aed;color:#fff;text-decorati
       <div id="wlist"></div>
       <button class="b" id="syncBtn">Send to the TV now</button>
       <button class="b gray" id="checkBtn">Check connection</button>
+      <button class="b gray" id="expBtn">Save a backup file on this phone</button>
+      <button class="b gray" id="impBtn">Open a backup file</button>
     </div>
   </section>
 </main>
@@ -542,6 +721,15 @@ $("addDrafts").onclick = function(){
   $("wordsText").value = "";
   render();
 };
+$("pageCropBtn").onclick = function(){
+  if (!drafts.length){ toast("Add the words to the list first"); return; }
+  openPageCrop(drafts.map(function(d){ return d.word; }), function(res){
+    var n = 0;
+    res.forEach(function(u, i){ if (u){ drafts[i].image = u; n++; } });
+    render();
+    if (n) toast(n + " pictures added");
+  });
+};
 $("saveWords").onclick = function(){
   if (!drafts.length){ toast("Add some words first"); return; }
   var topic = clean($("cat").value) || "MIXED";
@@ -586,6 +774,44 @@ $("saveQuiz").onclick = function(){
   toast(online ? "Saved - sending to the TV..." : "Saved on this phone - will be sent later");
   render();
   if (online) syncNow();
+};
+
+/* ------------------------------------------------------ backup file (works even if the browser blocks saving) */
+$("expBtn").onclick = function(){
+  if (!pending.length){ toast("Nothing is waiting"); return; }
+  var blob = new Blob([JSON.stringify({kls: 1, pending: pending})], {type: "application/json"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "KidsLearning_waiting_" + Date.now() + ".json";
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 800);
+  toast("Backup file saved in Downloads");
+};
+$("impBtn").onclick = function(){
+  var inp = document.createElement("input");
+  inp.type = "file"; inp.accept = ".json,application/json"; inp.style.display = "none";
+  inp.onchange = function(){
+    var f = inp.files[0];
+    if (f){
+      var rd = new FileReader();
+      rd.onload = function(){
+        try {
+          var d = JSON.parse(rd.result);
+          var list = d && Array.isArray(d.pending) ? d.pending : [];
+          var n = 0;
+          list.forEach(function(it){
+            if (it && (it.type === "words" || it.type === "quiz")){ it.id = uid(); delete it.error; delete it.fatal; pending.push(it); n++; }
+          });
+          store(); render();
+          toast(n + " item(s) loaded from the backup file");
+          if (online) syncNow();
+        } catch(e){ toast("This is not a backup file"); }
+      };
+      rd.readAsText(f, "utf-8");
+    }
+    document.body.removeChild(inp);
+  };
+  document.body.appendChild(inp); inp.click();
 };
 
 /* --------------------------------------------------------------- render */
@@ -898,6 +1124,7 @@ loadList();
     </div>
     <div class="box">
       <h2>3. Draft queue (<span id="qCount">0</span>)</h2>
+      <button id="pageCropBtn" class="blue full" style="margin-bottom:10px;">&#128214; Crop pictures from a book page</button>
       <div id="queueList"></div>
       <button id="sendBtn" class="green full" style="display:none;">Send All to TV</button>
     </div>
@@ -1149,6 +1376,15 @@ loadList();
       words.forEach(word => queue.push({ word: word, topic: topic, image_base64: null }));
       el("bulkInput").value = "";
       renderQueue();
+    });
+    el("pageCropBtn").addEventListener("click", () => {
+      if (!queue.length) { toast("Type the words first and press Create Drafts", true); return; }
+      openPageCrop(queue.map(q => q.word), results => {
+        let n = 0;
+        results.forEach((u, i) => { if (u) { queue[i].image_base64 = u; n++; } });
+        renderQueue();
+        if (n) toast(n + " pictures added");
+      });
     });
     el("sendBtn").addEventListener("click", async () => {
       const btn = el("sendBtn");
