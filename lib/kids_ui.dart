@@ -360,6 +360,8 @@ class BigTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = math.min(width, height);
     final sub = subtitle;
+    final titleSize = math.max(base * 0.125, 15.0);
+    final subSize = math.max(base * 0.085, 12.5);
     return TVFocusable(
       autofocus: autofocus,
       onPressed: onPressed,
@@ -391,9 +393,9 @@ class BigTile extends StatelessWidget {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: kidText(base * 0.125 * s),
+              style: kidText(titleSize * s),
             ),
-            if (sub != null) Text(sub, textAlign: TextAlign.center, style: kidText(base * 0.085 * s, w: FontWeight.w600)),
+            if (sub != null) Text(sub, textAlign: TextAlign.center, style: kidText(subSize * s, w: FontWeight.w600)),
           ],
         ),
       ),
@@ -596,7 +598,7 @@ class ScreenFrame extends StatelessWidget {
       body: KidsBackground(
         child: SafeArea(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(32 * s, 12 * s, 32 * s, 0),
+            padding: tvPadding(s),
             child: Column(
               children: [
                 Row(
@@ -624,39 +626,17 @@ class ScreenFrame extends StatelessWidget {
   }
 }
 
-Future<String?> askText(BuildContext context, String title, String hint) async {
-  final controller = TextEditingController();
-  final result = await showDialog<String>(
-    context: context,
-    builder: (BuildContext ctx) => AlertDialog(
-      backgroundColor: const Color(0xFF1E1B4B),
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: InputDecoration(hintText: hint),
-        onSubmitted: (String v) => Navigator.pop(ctx, v.trim()),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        ElevatedButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('OK')),
-      ],
-    ),
-  );
-  controller.dispose();
-  if (result == null || result.isEmpty) return null;
-  return result;
-}
-
 Future<bool> askConfirm(BuildContext context, String message) async {
+  final s = uiScale(context);
   final result = await showDialog<bool>(
     context: context,
     builder: (BuildContext ctx) => AlertDialog(
       backgroundColor: const Color(0xFF1E1B4B),
-      content: Text(message, style: const TextStyle(fontSize: 20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28 * s)),
+      content: Text(message, style: TextStyle(fontSize: 21 * s, color: Colors.white)),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
-        ElevatedButton(autofocus: true, onPressed: () => Navigator.pop(ctx, true), child: const Text('Yes')),
+        ActionButton(s: s, icon: Icons.close_rounded, label: 'No', color: const Color(0xFF64748B), onPressed: () => Navigator.pop(ctx, false)),
+        ActionButton(s: s, icon: Icons.check_rounded, label: 'Yes', color: const Color(0xFF22C55E), autofocus: true, onPressed: () => Navigator.pop(ctx, true)),
       ],
     ),
   );
@@ -664,7 +644,360 @@ Future<bool> askConfirm(BuildContext context, String message) async {
 }
 
 void showKidsSnack(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 3)));
+  final s = uiScale(context);
+  final h = MediaQuery.of(context).size.height;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message, style: TextStyle(fontSize: 20 * s, fontWeight: FontWeight.w600)),
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.fromLTRB(60 * s, 0, 60 * s, h * 0.15),
+      duration: const Duration(seconds: 4),
+    ),
+  );
+}
+
+/// TV-safe screen margins (about 5% of the screen) so nothing is cut off by TV overscan.
+EdgeInsets tvPadding(double s) => EdgeInsets.fromLTRB(44 * s, 22 * s, 44 * s, 0);
+
+/// Several buttons in ONE row that always fits the screen (shrinks a little if needed).
+class ButtonRow extends StatelessWidget {
+  final List<Widget> children;
+  final double spacing;
+  final WrapAlignment alignment; // kept so it can replace a Wrap without other edits
+  final double runSpacing;
+  const ButtonRow({
+    super.key,
+    required this.children,
+    this.spacing = 12,
+    this.alignment = WrapAlignment.center,
+    this.runSpacing = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) items.add(SizedBox(width: spacing));
+      items.add(children[i]);
+    }
+    return FittedBox(fit: BoxFit.scaleDown, child: Row(mainAxisSize: MainAxisSize.min, children: items));
+  }
+}
+
+/// Tiles that use the free space as well as possible: as large as possible without
+/// scrolling; if there are too many, they stay readable and the grid scrolls.
+class AdaptiveGrid extends StatelessWidget {
+  final List<Widget Function(double width, double height)> builders;
+  final double aspect; // tile width / tile height
+  final double minWidth;
+  final double maxWidth;
+  final double gap;
+
+  const AdaptiveGrid({
+    super.key,
+    required this.builders,
+    required this.aspect,
+    required this.minWidth,
+    required this.maxWidth,
+    required this.gap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
+      final pad = 12.0;
+      final count = builders.length;
+      final availW = math.max(100.0, box.maxWidth - pad * 2);
+      final availH = box.maxHeight.isFinite ? box.maxHeight - pad * 2 : 100000.0;
+      var bestW = 0.0;
+      var fits = false;
+      for (var cols = 1; cols <= math.max(1, count); cols++) {
+        var cw = (availW - gap * (cols - 1)) / cols;
+        if (cw < minWidth) break;
+        if (cw > maxWidth) cw = maxWidth;
+        final ch = cw / aspect;
+        final rows = (count / cols).ceil();
+        final total = rows * ch + (rows - 1) * gap;
+        if (total <= availH && cw > bestW) {
+          bestW = cw;
+          fits = true;
+        }
+      }
+      double tileW;
+      if (fits) {
+        tileW = bestW;
+      } else {
+        final colsFallback = math.max(1, ((availW + gap) / (minWidth + gap)).floor());
+        tileW = math.min(maxWidth, (availW - gap * (colsFallback - 1)) / colsFallback);
+      }
+      final tileH = tileW / aspect;
+      final items = <Widget>[for (final b in builders) b(tileW, tileH)];
+      return Center(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(pad),
+          child: Wrap(alignment: WrapAlignment.center, spacing: gap, runSpacing: gap, children: items),
+        ),
+      );
+    });
+  }
+}
+
+// ----------------------------------------------------------------------
+// ON-SCREEN KEYBOARD (English + Hindi). Key size adapts to the free space.
+// Used for typed quiz answers and for every text box (player names ...),
+// because the TV's own keyboard often does not appear.
+// ----------------------------------------------------------------------
+class _KeyDef {
+  final String label;
+  final String value;
+  const _KeyDef(this.label, this.value);
+}
+
+List<List<_KeyDef>> _buildRows(List<String> rows) {
+  final out = <List<_KeyDef>>[];
+  for (final row in rows) {
+    final keys = <_KeyDef>[];
+    for (final token in row.split(' ')) {
+      if (token.isEmpty) continue;
+      final r = token.runes.first;
+      final isMark = (r >= 0x0900 && r <= 0x0903) || (r >= 0x093E && r <= 0x094D) || r == 0x093C;
+      keys.add(_KeyDef(isMark ? '\u0915$token' : token, token));
+    }
+    out.add(keys);
+  }
+  return out;
+}
+
+final List<List<_KeyDef>> _englishRows = _buildRows(<String>[
+  '1 2 3 4 5 6 7 8 9 0',
+  'Q W E R T Y U I O P',
+  'A S D F G H J K L',
+  'Z X C V B N M',
+]);
+
+final List<List<_KeyDef>> _hindiRows = _buildRows(<String>[
+  'अ आ इ ई उ ऊ ऋ ए ऐ ओ औ अं अः',
+  'ा ि ी ु ू ृ े ै ो ौ ं ः ँ ्',
+  'क ख ग घ ङ च छ ज झ ञ',
+  'ट ठ ड ढ ण त थ द ध न',
+  'प फ ब भ म य र ल व श',
+  'ष स ह ळ क्ष त्र ज्ञ ड़ ढ़',
+  '0 1 2 3 4 5 6 7 8 9',
+]);
+
+class OnScreenKeyboard extends StatelessWidget {
+  final bool hindi;
+  final double s;
+  final ValueChanged<String> onKey;
+  final VoidCallback onBackspace;
+  final VoidCallback onToggleLanguage;
+  final bool autofocus; // focus the first key when the screen opens
+
+  const OnScreenKeyboard({
+    super.key,
+    required this.hindi,
+    required this.s,
+    required this.onKey,
+    required this.onBackspace,
+    required this.onToggleLanguage,
+    this.autofocus = false,
+  });
+
+  Widget _key(double k, String label, VoidCallback onTap, {double wFactor = 1.0, Color color = const Color(0xFF3B82F6), bool focusFirst = false}) {
+    return TVFocusable(
+      debounceMs: 300,
+      autofocus: focusFirst,
+      onPressed: onTap,
+      scale: 1.12,
+      builder: (BuildContext context, bool focused) => AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        width: k * wFactor,
+        height: k,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: focused ? Colors.amberAccent : color,
+          borderRadius: BorderRadius.circular(k * 0.22),
+          border: Border.all(color: focused ? Colors.white : Colors.white30, width: focused ? 3 : 1.5),
+        ),
+        child: Text(label, style: kidText(k * 0.5, c: focused ? Colors.black87 : Colors.white)),
+      ),
+    );
+  }
+
+  double _units(List<_KeyDef> row) {
+    var u = 0.0;
+    for (final d in row) {
+      u += d.value.runes.length > 2 ? 1.5 : 1.0;
+    }
+    return u;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = hindi ? _hindiRows : _englishRows;
+    return LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
+      final gap = 4.0 * s;
+      final lineCount = rows.length + 1;
+      var maxUnits = 7.6;
+      for (final row in rows) {
+        final u = _units(row);
+        if (u > maxUnits) maxUnits = u;
+      }
+      final w = box.maxWidth.isFinite ? box.maxWidth : 800.0;
+      final h = box.maxHeight.isFinite ? box.maxHeight : 400.0;
+      final byW = (w - gap * (maxUnits + 1)) / maxUnits;
+      final byH = (h - gap * (lineCount + 1)) / lineCount;
+      final k = math.max(20.0, math.min(math.min(byW, byH), 54.0 * s));
+
+      final lines = <Widget>[];
+      var first = true;
+      for (final row in rows) {
+        final keys = <Widget>[];
+        for (final d in row) {
+          keys.add(Padding(
+            padding: EdgeInsets.all(gap / 2),
+            child: _key(k, d.label, () => onKey(d.value), wFactor: d.value.runes.length > 2 ? 1.5 : 1.0, focusFirst: autofocus && first),
+          ));
+          first = false;
+        }
+        lines.add(Row(mainAxisSize: MainAxisSize.min, children: keys));
+      }
+      lines.add(Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, 'SPACE', () => onKey(' '), wFactor: 4.0, color: const Color(0xFF6366F1))),
+          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, '⌫', onBackspace, wFactor: 1.8, color: const Color(0xFFEF4444))),
+          Padding(padding: EdgeInsets.all(gap / 2), child: _key(k, hindi ? 'EN' : 'हिं', onToggleLanguage, wFactor: 1.8, color: const Color(0xFF22C55E))),
+        ],
+      ));
+      return Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(mainAxisSize: MainAxisSize.min, children: lines),
+        ),
+      );
+    });
+  }
+}
+
+/// Ask for a text (player name, folder name ...) with the on-screen keyboard.
+/// Works with the remote, a mouse and a physical keyboard. Returns null if cancelled.
+Future<String?> askText(BuildContext context, String title, String hint, {String initial = ''}) async {
+  final result = await Navigator.push<String>(
+    context,
+    MaterialPageRoute<String>(builder: (_) => _TextEntryScreen(title: title, hint: hint, initial: initial)),
+  );
+  if (result == null || result.trim().isEmpty) return null;
+  return result.trim();
+}
+
+class _TextEntryScreen extends StatefulWidget {
+  final String title;
+  final String hint;
+  final String initial;
+  const _TextEntryScreen({required this.title, required this.hint, required this.initial});
+  @override
+  State<_TextEntryScreen> createState() => _TextEntryScreenState();
+}
+
+class _TextEntryScreenState extends State<_TextEntryScreen> {
+  String _text = '';
+  bool _hindi = false;
+  static const int _maxLength = 30;
+
+  @override
+  void initState() {
+    super.initState();
+    _text = widget.initial;
+  }
+
+  /// Names look right automatically: first letter of every word is a capital.
+  void _type(String v) {
+    if (_text.runes.length >= _maxLength) return;
+    var c = v;
+    if (c.length == 1 && RegExp(r'[A-Za-z]').hasMatch(c)) {
+      final prev = _text.isEmpty ? ' ' : _text[_text.length - 1];
+      c = prev == ' ' ? c.toUpperCase() : c.toLowerCase();
+    }
+    CardStore.keyClick();
+    setState(() => _text = _text + c);
+  }
+
+  void _backspace() {
+    if (_text.isEmpty) return;
+    final runes = _text.runes.toList();
+    setState(() => _text = String.fromCharCodes(runes.sublist(0, runes.length - 1)));
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final k = event.logicalKey;
+    if (k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete) {
+      _backspace();
+      return KeyEventResult.handled;
+    }
+    if (event is KeyRepeatEvent) return KeyEventResult.ignored;
+    final ch = event.character;
+    if (ch != null && ch.isNotEmpty && ch.runes.first >= 32 && ch != '\u007f') {
+      _type(ch);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = uiScale(context);
+    final empty = _text.isEmpty;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _onKey,
+      child: ScreenFrame(
+        title: widget.title,
+        actions: [
+          ActionButton(
+            s: s,
+            icon: Icons.check_circle_rounded,
+            label: 'Done',
+            color: const Color(0xFF22C55E),
+            onPressed: () => Navigator.pop(context, _text),
+          ),
+        ],
+        body: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(horizontal: 18 * s, vertical: 10 * s),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(18 * s),
+                border: Border.all(color: Colors.white70, width: 2),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  empty ? widget.hint : '$_text|',
+                  style: kidText(36 * s, c: empty ? Colors.white60 : Colors.white),
+                ),
+              ),
+            ),
+            SizedBox(height: 8 * s),
+            Expanded(
+              child: OnScreenKeyboard(
+                hindi: _hindi,
+                s: s,
+                autofocus: true,
+                onKey: _type,
+                onBackspace: _backspace,
+                onToggleLanguage: () => setState(() => _hindi = !_hindi),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Draws an analog clock (used by the "Time & Clock" maths topic).
