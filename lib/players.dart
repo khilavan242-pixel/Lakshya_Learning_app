@@ -514,7 +514,7 @@ class _PlayerSettingsScreenState extends State<PlayerSettingsScreen> {
         s: s,
         autofocus: !widget.home,
         onPressed: () async {
-          final n = await askText(context, 'Player name', 'Type a name');
+          final n = await askText(context, 'Player name', 'Type a name', initial: p.name);
           if (n != null) await _commit(() => p.name = n);
         },
       ),
@@ -739,27 +739,24 @@ class AvatarPickerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = uiScale(context);
-    final tiles = <Widget>[];
+    final tiles = <Widget Function(double, double)>[];
     for (var i = 0; i < PlayerStore.avatars.length; i++) {
       final e = PlayerStore.avatars[i];
-      tiles.add(BigTile(
-        emoji: e,
-        title: '',
-        colors: kTopicGradients[i % kTopicGradients.length],
-        s: s,
-        width: 110,
-        height: 100,
-        autofocus: i == 0,
-        onPressed: () => Navigator.pop(context, e),
-      ));
+      final index = i;
+      tiles.add((double w, double h) => BigTile(
+            emoji: e,
+            title: '',
+            colors: kTopicGradients[index % kTopicGradients.length],
+            s: s,
+            width: w / s,
+            height: h / s,
+            autofocus: index == 0,
+            onPressed: () => Navigator.pop(context, e),
+          ));
     }
     return ScreenFrame(
       title: 'Choose an avatar',
-      body: Center(
-        child: SingleChildScrollView(
-          child: Wrap(alignment: WrapAlignment.center, spacing: 14 * s, runSpacing: 14 * s, children: tiles),
-        ),
-      ),
+      body: AdaptiveGrid(builders: tiles, aspect: 1.1, minWidth: 80 * s, maxWidth: 140 * s, gap: 14 * s),
     );
   }
 }
