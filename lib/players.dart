@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app_store.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
+import 'library.dart';
 import 'math_data.dart';
 import 'quiz_model.dart';
 import 'storage_location.dart';
@@ -35,6 +36,7 @@ class Player {
   List<String>? spellingTopics; // null = all
   List<String>? quizIds; // null = all
   List<String>? mathTopics; // null = all
+  String libClass; // class of the library this child opens first ('' = all classes)
 
   Player({
     required this.id,
@@ -52,6 +54,7 @@ class Player {
     this.spellingTopics,
     this.quizIds,
     this.mathTopics,
+    this.libClass = '',
   });
 
   Map<String, dynamic> toJson() {
@@ -71,6 +74,7 @@ class Player {
       'spellingTopics': spellingTopics,
       'quizIds': quizIds,
       'mathTopics': mathTopics,
+      'libClass': libClass,
     };
   }
 
@@ -91,6 +95,7 @@ class Player {
       spellingTopics: _optList(m['spellingTopics']),
       quizIds: _optList(m['quizIds']),
       mathTopics: _optList(m['mathTopics']),
+      libClass: (m['libClass'] ?? '').toString(),
     );
   }
 }
@@ -411,6 +416,14 @@ class PlayerSettingsScreen extends StatefulWidget {
 }
 
 class _PlayerSettingsScreenState extends State<PlayerSettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    Library.load().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
   Player get _p {
     if (widget.home) return PlayerStore.active;
     for (final p in PlayerStore.players) {
@@ -534,6 +547,15 @@ class _PlayerSettingsScreenState extends State<PlayerSettingsScreen> {
         s: s,
         onSelected: (int i) => _commit(() => p.grade = i),
       ),
+      SettingLinkRow(
+        label: 'Class (opens this class first)',
+        value: Library.classById(p.libClass)?.name ?? 'All classes',
+        s: s,
+        onPressed: () async {
+          final id = await pickLibClass(context);
+          if (id != null) await _commit(() => p.libClass = id);
+        },
+      ),
       SettingChoiceRow(
         label: 'Voice language (maths)',
         choices: const <String>['English', 'हिन्दी'],
@@ -602,6 +624,14 @@ class _PlayerSettingsScreenState extends State<PlayerSettingsScreen> {
           },
         ),
       );
+      rows.add(SettingLinkRow(
+        label: '🗂 Organize content (classes, subjects, rename, move)',
+        s: s,
+        onPressed: () async {
+          await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const LibraryManagerScreen()));
+          if (mounted) setState(() {});
+        },
+      ));
       rows.add(SettingLinkRow(
         label: 'Storage location (Documents / USB / folder)',
         value: StorageLocation.shortLabel,
