@@ -587,8 +587,9 @@ class ScreenFrame extends StatelessWidget {
   final String title;
   final Widget body;
   final List<Widget> actions;
+  final VoidCallback? onBack; // default: leave the screen
 
-  const ScreenFrame({super.key, required this.title, required this.body, this.actions = const <Widget>[]});
+  const ScreenFrame({super.key, required this.title, required this.body, this.actions = const <Widget>[], this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -607,7 +608,7 @@ class ScreenFrame extends StatelessWidget {
                       s: s,
                       icon: Icons.arrow_back_rounded,
                       color: const Color(0xFF5C6BC0),
-                      onPressed: () => Navigator.maybePop(context),
+                      onPressed: onBack ?? () => Navigator.maybePop(context),
                     ),
                     SizedBox(width: 16 * s),
                     Expanded(child: Text(title, style: kidText(30 * s), overflow: TextOverflow.ellipsis)),
