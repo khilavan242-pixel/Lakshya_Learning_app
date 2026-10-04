@@ -135,6 +135,8 @@ class _StorageScreenState extends State<StorageScreen> {
     final rows = <Widget>[
       _infoRow(s, 'Saving in now:\n${StorageLocation.activePath}'),
       if (StorageLocation.isFallback) _infoRow(s, '⚠ ${StorageLocation.statusNote}'),
+      if (StorageLocation.isFallback && StorageLocation.mode == 'documents')
+        _infoRow(s, 'Reinstalling the app removes its permission, so it cannot open your old data in Documents/${StorageLocation.appFolderName}. The data is still safe there.\n1) Allow "Files and media" for this app in the TV Settings > Apps.\n2) Close and open the app again, or press "Documents folder" below. Your old data is used as it is.'),
       SettingLinkRow(
         label: '📁 Documents folder (default)',
         value: inDocs ? '✅ in use' : null,
