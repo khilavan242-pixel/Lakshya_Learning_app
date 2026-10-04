@@ -951,7 +951,7 @@ ul{margin:6px 0 6px 18px;padding:0;font-size:14px}
       <li><b>match</b> - matching: <code>pairs</code> as [{"left":"..","right":".."}]</li>
       <li><b>tf</b> - true / false: <code>"answer": true</code></li>
     </ul>
-    <p class="muted">Optional per question: <code>explanation</code> (read aloud after a correct answer), <code>hint</code>, <code>lang</code> ("en" or "hi"). Several quizzes in one file: {"quizzes": [ ... ]}. A plain list of questions also works.</p>
+    <p class="muted">Optional for the whole quiz: <code>class</code> and <code>subject</code> (for example "Class 1", "English") put it in the right folder on the TV. Optional per question: <code>explanation</code> (read aloud after a correct answer), <code>hint</code>, <code>lang</code> ("en" or "hi"). Several quizzes in one file: {"quizzes": [ ... ]}. A plain list of questions also works.</p>
     <pre id="sample">Loading...</pre>
     <button class="full" id="copySample">Copy this example</button>
     <button class="full gray" id="copyPrompt">Copy an AI prompt to make quizzes</button>
