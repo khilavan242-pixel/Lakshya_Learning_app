@@ -5,6 +5,7 @@ import 'app_store.dart';
 import 'core_audio_models.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
+import 'library.dart';
 import 'phone_manager.dart';
 import 'players.dart';
 import 'quiz_model.dart';
@@ -86,28 +87,41 @@ class QuizHomeScreen extends StatefulWidget {
 }
 
 class _QuizHomeScreenState extends State<QuizHomeScreen> {
-  List<QuizSet> _sets = <QuizSet>[];
-  Map<String, int> _best = <String, int>{};
-  bool _loaded = false;
+  final ValueNotifier<int> _refresh = ValueNotifier<int>(0);
 
   @override
-  void initState() {
-    super.initState();
-    _reload();
+  void dispose() {
+    _refresh.dispose();
+    super.dispose();
   }
 
-  Future<void> _reload() async {
+  /// The quiz sets this player may use, as library items (Class > Subject > Quiz).
+  Future<List<LibItem>> _loadItems() async {
     await QuizPrefs.load();
     final all = await QuizStore.loadAll();
+    await Library.syncQuizzes(all);
     final allowed = PlayerStore.active.quizIds;
-    final sets = allowed == null ? all : all.where((QuizSet q) => allowed.contains(q.id)).toList();
+    final picked = allowed == null ? all : all.where((QuizSet q) => allowed.contains(q.id)).toList();
+    final sets = picked.isEmpty ? all : picked;
     final best = await QuizStore.bestScores();
-    if (!mounted) return;
-    setState(() {
-      _sets = sets.isEmpty ? all : sets;
-      _best = best;
-      _loaded = true;
-    });
+    final items = <LibItem>[];
+    for (final set in sets) {
+      final mastered = Mastery.masteredIn<QuizQuestion>(set.questions, (QuizQuestion q) => 'quiz:${set.id}:${q.question}');
+      final b = best[set.id];
+      final extra = <String>[];
+      if (mastered > 0) extra.add('✅ $mastered');
+      if (b != null) extra.add('best $b%');
+      items.add(LibItem(
+        kind: 'quiz',
+        id: set.id,
+        title: set.title,
+        emoji: set.emoji,
+        subtitle: '${set.questions.length} questions${extra.isEmpty ? '' : '  •  ${extra.join('  ')}'}',
+        count: set.questions.length,
+        payload: set,
+      ));
+    }
+    return items;
   }
 
   Future<void> _play(String title, String emoji, String scoreId, List<QuizItem> Function() builder, {bool master = false}) async {
@@ -115,63 +129,46 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
       context,
       MaterialPageRoute<void>(builder: (_) => QuizPlayScreen(title: title, emoji: emoji, scoreId: scoreId, builder: builder, master: master)),
     );
-    _reload();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final s = uiScale(context);
-    Widget body;
-    if (!_loaded) {
-      body = const Center(child: CircularProgressIndicator(color: Colors.white));
-    } else if (_sets.isEmpty) {
-      body = Center(
-        child: Text('No quizzes yet.\nPress "Add Quiz" and send a JSON file from your phone.', textAlign: TextAlign.center, style: kidText(24 * s)),
-      );
-    } else {
-      final tiles = <Widget Function(double, double)>[];
-      var pending = 0;
-      for (final set in _sets) {
-        for (final q in set.questions) {
-          if (!Mastery.isMastered('quiz:${set.id}:${q.question}')) pending++;
-        }
+  List<LibExtra> _extras(List<LibItem> scope, String scopeName) {
+    final sets = <QuizSet>[];
+    for (final it in scope) {
+      final p = it.payload;
+      if (p is QuizSet) sets.add(p);
+    }
+    var pending = 0;
+    for (final set in sets) {
+      for (final q in set.questions) {
+        if (!Mastery.isMastered('quiz:${set.id}:${q.question}')) pending++;
       }
-      tiles.add((double w, double h) => BigTile(
+    }
+    return <LibExtra>[
+      LibExtra(
         emoji: '🏆',
         title: 'Master Play',
         subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
         colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
-        s: s,
-        width: w / s,
-        height: h / s,
-        autofocus: true,
-        onPressed: () => _play('Master Play', '🏆', 'master', () => _masterItems(_sets), master: true),
-      ));
-      for (var i = 0; i < _sets.length; i++) {
-        final set = _sets[i];
-        final best = _best[set.id];
-        final mastered = Mastery.masteredIn<QuizQuestion>(set.questions, (QuizQuestion q) => 'quiz:${set.id}:${q.question}');
-        final extra = <String>[];
-        if (mastered > 0) extra.add('✅ $mastered');
-        if (best != null) extra.add('best $best%');
-        tiles.add((double w, double h) => BigTile(
-          emoji: set.emoji,
-          title: set.title,
-          subtitle: '${set.questions.length} questions${extra.isEmpty ? '' : '  •  ${extra.join('  ')}'}',
-          colors: kTopicGradients[i % kTopicGradients.length],
-          s: s,
-          width: w / s,
-          height: h / s,
-          autofocus: false,
-          onPressed: () => _play(set.title, set.emoji, set.id, () => _itemsForSet(set)),
-        ));
-      }
-      body = AdaptiveGrid(builders: tiles, aspect: 1.3, minWidth: 170 * s, maxWidth: 280 * s, gap: 20 * s);
-    }
+        onPressed: () => _play('Master Play', '🏆', 'master', () => _masterItems(sets), master: true),
+      ),
+    ];
+  }
 
-    return ScreenFrame(
+  @override
+  Widget build(BuildContext context) {
+    return LibraryBrowser(
       title: '🧠 Quiz Time',
-      actions: [
+      myClassId: PlayerStore.active.libClass,
+      emptyText: 'No quizzes yet.\nPress "Add Quiz" and send a JSON file from your phone.',
+      loader: _loadItems,
+      onOpen: (LibItem item) {
+        final p = item.payload;
+        if (p is QuizSet) return _play(item.title, item.emoji, p.id, () => _itemsForSet(p));
+        return Future<void>.value();
+      },
+      extras: _extras,
+      refresh: _refresh,
+      actions: (double s, Future<void> Function() reload) => <Widget>[
         ActionButton(
           s: s,
           icon: Icons.record_voice_over_rounded,
@@ -182,7 +179,6 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
             QuizPrefs.save();
           },
         ),
-        SizedBox(width: 10 * s),
         ActionButton(
           s: s,
           icon: Icons.shuffle_rounded,
@@ -193,7 +189,6 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
             QuizPrefs.save();
           },
         ),
-        SizedBox(width: 10 * s),
         ActionButton(
           s: s,
           icon: Icons.qr_code_2_rounded,
@@ -201,11 +196,10 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
           color: const Color(0xFF00BFA5),
           onPressed: () async {
             await showPhoneManager(context, path: '/quiz');
-            _reload();
+            await reload();
           },
         ),
       ],
-      body: body,
     );
   }
 }
