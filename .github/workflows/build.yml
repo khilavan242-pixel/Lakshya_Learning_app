@@ -1,1 +1,37 @@
+name: TV App Production Build
 
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Generate Fresh Project
+        run: |
+          flutter create full_app
+          cp -r lib full_app/
+          cp pubspec.yaml full_app/
+          cp android/app/src/main/AndroidManifest.xml full_app/android/app/src/main/
+
+      - name: Build Split APKs
+        run: |
+          cd full_app
+          # Generates separate, tiny APKs for different TV processors
+          flutter build apk --release --split-per-abi
+
+      - name: Zip and Upload to Sendit
+        run: |
+          cd full_app/build/app/outputs/flutter-apk/
+          zip -r TV-App-Release.zip *release.apk
+          curl --upload-file TV-App-Release.zip https://sendit.sh/TV-App-Release.zip
