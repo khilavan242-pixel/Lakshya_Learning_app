@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_store.dart';
 import 'kids_ui.dart';
+import 'library.dart';
 import 'players.dart';
 import 'quiz_model.dart';
 import 'speech_service.dart';
@@ -51,7 +52,8 @@ class LearnSet {
   final String title;
   final String emoji;
   final List<LearnCard> cards;
-  const LearnSet(this.title, this.emoji, this.cards);
+  final String id; // spelling topic name or quiz id ('' = not part of the library)
+  const LearnSet(this.title, this.emoji, this.cards, {this.id = ''});
 }
 
 class LearnSources {
@@ -71,7 +73,7 @@ class LearnSources {
     final out = <LearnSet>[];
     if (every.isNotEmpty) out.add(LearnSet('All words', '📚', every));
     byTopic.forEach((String topic, List<LearnCard> list) {
-      out.add(LearnSet(topic, emojiForTopic(topic), list));
+      out.add(LearnSet(topic, emojiForTopic(topic), list, id: topic));
     });
     return out;
   }
@@ -99,7 +101,7 @@ class LearnSources {
     if (sets.isEmpty) sets = all;
     final out = <LearnSet>[];
     for (final set in sets) {
-      out.add(LearnSet(set.title, set.emoji, set.questions.map((QuizQuestion q) => _fromQuestion(set.id, q)).toList()));
+      out.add(LearnSet(set.title, set.emoji, set.questions.map((QuizQuestion q) => _fromQuestion(set.id, q)).toList(), id: set.id));
     }
     return out;
   }
@@ -151,7 +153,7 @@ class QuickLearnHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = uiScale(context);
-    Widget Function(double, double) tile(String emoji, String title, String sub, List<Color> colors, String group, bool first) {
+    Widget Function(double, double) tile(String emoji, String title, String sub, List<Color> colors, Widget Function() screen, bool first) {
       return (double w, double h) => BigTile(
             emoji: emoji,
             title: title,
@@ -161,14 +163,13 @@ class QuickLearnHome extends StatelessWidget {
             width: w / s,
             height: h / s,
             autofocus: first,
-            onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => QuickLearnTopics(group: group))),
+            onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen())),
           );
     }
 
     final tiles = <Widget Function(double, double)>[
-      tile('✏️', 'Spelling words', 'Pictures & letters', const <Color>[Color(0xFFFF9A44), Color(0xFFFC6076)], 'spelling', true),
-      tile('🧠', 'Quiz questions', 'Questions & answers', const <Color>[Color(0xFFB24592), Color(0xFFF15F79)], 'quiz', false),
-      tile('🧮', 'Maths facts', 'Tables, squares, roots', const <Color>[Color(0xFF36D1DC), Color(0xFF5B86E5)], 'math', false),
+      tile('📚', 'My library', 'Class > Subject > Topic', const <Color>[Color(0xFFFF9A44), Color(0xFFFC6076)], () => const QuickLearnLibrary(), true),
+      tile('🧮', 'Maths facts', 'Tables, squares, roots', const <Color>[Color(0xFF36D1DC), Color(0xFF5B86E5)], () => const QuickLearnTopics(group: 'math'), false),
     ];
     return ScreenFrame(
       title: '📖 Quick Learn',
@@ -178,6 +179,70 @@ class QuickLearnHome extends StatelessWidget {
           Expanded(child: AdaptiveGrid(builders: tiles, aspect: 1.1, minWidth: 150 * s, maxWidth: 270 * s, gap: 22 * s)),
         ],
       ),
+    );
+  }
+}
+
+/// Spelling topics and quiz sets in their Class > Subject folders.
+class QuickLearnLibrary extends StatelessWidget {
+  const QuickLearnLibrary({super.key});
+
+  Future<List<LibItem>> _load() async {
+    await Library.load();
+    final out = <LibItem>[];
+    final all = await QuizStore.loadAll();
+    await Library.syncQuizzes(all);
+    final spell = await LearnSources.spelling();
+    for (final set in spell) {
+      if (set.id.isEmpty) continue;
+      out.add(LibItem(kind: 'spell', id: set.id, title: set.title, emoji: set.emoji, subtitle: '✏️ ${set.cards.length} words', count: set.cards.length, payload: set));
+    }
+    final quiz = await LearnSources.quizzes();
+    for (final set in quiz) {
+      if (set.id.isEmpty) continue;
+      out.add(LibItem(kind: 'quiz', id: set.id, title: set.title, emoji: set.emoji, subtitle: '🧠 ${set.cards.length} questions', count: set.cards.length, payload: set));
+    }
+    return out;
+  }
+
+  List<LibExtra> _extras(BuildContext context, List<LibItem> scope, String name) {
+    final cards = <LearnCard>[];
+    for (final it in scope) {
+      final p = it.payload;
+      if (p is LearnSet) cards.addAll(p.cards);
+    }
+    if (scope.length < 2 || cards.isEmpty) return <LibExtra>[];
+    return <LibExtra>[
+      LibExtra(
+        emoji: '📖',
+        title: 'Learn all',
+        subtitle: '${cards.length} cards',
+        colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
+        onPressed: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => LearnScreen(set: LearnSet(name.isEmpty ? 'Everything' : name, '📚', cards))),
+          );
+        },
+      ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LibraryBrowser(
+      title: '📚 Quick Learn',
+      myClassId: PlayerStore.active.libClass,
+      emptyText: 'Nothing to learn yet.\nAdd words and quizzes first.',
+      loader: _load,
+      onOpen: (LibItem item) async {
+        final p = item.payload;
+        if (p is LearnSet) {
+          await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => LearnScreen(set: p)));
+        }
+      },
+      extras: (List<LibItem> scope, String name) => _extras(context, scope, name),
+      actions: (double s, Future<void> Function() reload) => <Widget>[],
     );
   }
 }
