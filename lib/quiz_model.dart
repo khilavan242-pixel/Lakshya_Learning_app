@@ -76,6 +76,8 @@ class QuizSet {
   final String emoji;
   final String lang;
   final List<QuizQuestion> questions;
+  final String cls; // optional "class" written in the JSON (e.g. Class 1)
+  final String subject; // optional "subject" written in the JSON (e.g. English)
 
   const QuizSet({
     required this.id,
@@ -83,6 +85,8 @@ class QuizSet {
     required this.emoji,
     required this.lang,
     required this.questions,
+    this.cls = '',
+    this.subject = '',
   });
 
   Map<String, dynamic> toJson() {
@@ -91,6 +95,8 @@ class QuizSet {
       'title': title,
       'emoji': emoji,
       'lang': lang,
+      'cls': cls,
+      'subject': subject,
       'questions': questions.map((q) => q.toJson()).toList(),
     };
   }
@@ -109,6 +115,8 @@ class QuizSet {
       emoji: (m['emoji'] ?? '🧠').toString(),
       lang: (m['lang'] ?? '').toString(),
       questions: qs,
+      cls: (m['cls'] ?? '').toString(),
+      subject: (m['subject'] ?? '').toString(),
     );
   }
 }
@@ -224,6 +232,8 @@ class QuizParser {
     final title = _str(_first(m, ['title', 'name', 'topic', 'subject']));
     final emoji = _str(_first(m, ['emoji', 'icon']));
     final lang = _normLang(_str(_first(m, ['language', 'lang'])));
+    final cls = _str(_first(m, ['class', 'className', 'class_name', 'standard', 'std']));
+    final subject = _str(_first(m, ['subject', 'subject_name', 'subjectName']));
 
     dynamic listRaw = _first(m, ['questions', 'items', 'data', 'qa', 'quiz']);
     if (listRaw is! List) {
@@ -251,6 +261,8 @@ class QuizParser {
       emoji: emoji.isEmpty ? '🧠' : emoji,
       lang: lang,
       questions: qs,
+      cls: cls,
+      subject: subject,
     );
   }
 
@@ -464,6 +476,8 @@ class QuizStore {
         emoji: s.emoji,
         lang: s.lang,
         questions: s.questions,
+        cls: s.cls,
+        subject: s.subject,
       );
       await save(withId);
       saved.add(withId);
