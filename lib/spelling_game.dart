@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'app_store.dart';
 import 'core_audio_models.dart';
 import 'kids_ui.dart';
+import 'library.dart';
 import 'players.dart';
 import 'sync_server.dart';
 
@@ -20,73 +21,76 @@ class TopicLobbyScreen extends StatefulWidget {
 }
 
 class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
-  Map<String, List<WordCard>> _topics = {};
+  Map<String, List<WordCard>> _topics = <String, List<WordCard>>{};
+  List<WordCard> _allWords = <WordCard>[];
   TVSyncServer? _syncServer;
-  bool _loaded = false;
   int _lastCount = -1;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCards();
-  }
+  final ValueNotifier<int> _refresh = ValueNotifier<int>(0);
 
   @override
   void dispose() {
     _syncServer?.stopServer();
+    _refresh.dispose();
     super.dispose();
   }
 
-  List<WordCard> _allWords = <WordCard>[];
-
-  Future<void> _loadCards() async {
+  /// Topics this player may use, as library items (sorted into Class > Subject by LibraryBrowser).
+  Future<List<LibItem>> _loadItems() async {
     final all = await CardStore.loadCards();
-    // each player only sees the topics selected for him/her in Settings
     final allowed = PlayerStore.active.spellingTopics;
     var cards = allowed == null ? all : all.where((WordCard c) => allowed.contains(c.topic)).toList();
     if (cards.isEmpty) cards = all;
     final topics = <String, List<WordCard>>{};
-    if (cards.isNotEmpty) topics['ALL WORDS'] = List<WordCard>.of(cards);
-    for (final card in cards) {
-      if (card.topic == 'ALL WORDS') continue;
-      topics.putIfAbsent(card.topic, () => <WordCard>[]).add(card);
+    for (final c in cards) {
+      topics.putIfAbsent(c.topic, () => <WordCard>[]).add(c);
     }
-    if (!mounted) return;
     final added = _lastCount >= 0 && all.length > _lastCount;
     _lastCount = all.length;
     if (added) GameAudioService.instance.playSuccessFanfare();
-    setState(() {
-      _allWords = cards;
-      _topics = topics;
-      _loaded = true;
+    _topics = topics;
+    _allWords = cards;
+    final smart = PlayerStore.active.smart;
+    final items = <LibItem>[];
+    topics.forEach((String topic, List<WordCard> list) {
+      final left = Mastery.notMastered<WordCard>(list, _spellKey).length;
+      final done = list.length - left;
+      var sub = list.length == 1 ? '1 word' : '${list.length} words';
+      if (smart) {
+        sub = left == 0 ? '✅ all mastered' : '$left to learn${done > 0 ? '  •  ✅$done' : ''}';
+      }
+      items.add(LibItem(kind: 'spell', id: topic, title: topic, emoji: emojiForTopic(topic), subtitle: sub, count: list.length));
     });
+    return items;
   }
 
-  List<WordCard> _masterRound() {
-    final pool = Mastery.notMastered<WordCard>(_allWords, _spellKey);
-    return Mastery.smartPick<WordCard>(pool, _spellKey, PlayerStore.active.rounds);
+  List<WordCard> _wordsOf(List<LibItem> scope) {
+    final ids = scope.map((LibItem i) => i.id).toSet();
+    return _allWords.where((WordCard c) => ids.contains(c.topic)).toList();
   }
 
-  /// Master Play: rounds of the words the child has not mastered yet, hardest first,
-  /// until every word has been spelled correctly 3 times in a row.
-  Future<void> _masterPlay() async {
+  /// Master Play: rounds of the words not mastered yet (in the folder you are in),
+  /// hardest first, until every word was spelled right 3 times in a row.
+  Future<void> _masterPlay(List<WordCard> words) async {
+    List<WordCard> round() {
+      final pool = Mastery.notMastered<WordCard>(words, _spellKey);
+      return Mastery.smartPick<WordCard>(pool, _spellKey, PlayerStore.active.rounds);
+    }
+
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (_) => TVGameScreen(deck: <WordCard>[], title: 'Master Play', session: true, master: true, builder: _masterRound),
+        builder: (_) => TVGameScreen(deck: <WordCard>[], title: 'Master Play', session: true, master: true, builder: round),
       ),
     );
-    if (mounted) _loadCards();
   }
 
-  Future<void> _playTopic(String topic) async {
-    final cards = _topics[topic] ?? <WordCard>[];
+  Future<void> _playWords(String title, List<WordCard> cards) async {
     final smart = PlayerStore.active.smart;
     var deck = List<WordCard>.of(cards);
     if (smart) {
       final left = Mastery.notMastered<WordCard>(cards, _spellKey);
       if (left.isEmpty) {
-        showKidsSnack(context, '🏆 All words in $topic are mastered - revision round!');
+        showKidsSnack(context, '🏆 All words in $title are mastered - revision round!');
       } else {
         deck = List<WordCard>.of(left);
       }
@@ -94,14 +98,35 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
     }
     await Navigator.push(
       context,
-      MaterialPageRoute<void>(builder: (_) => TVGameScreen(deck: deck, title: topic, session: smart)),
+      MaterialPageRoute<void>(builder: (_) => TVGameScreen(deck: deck, title: title, session: smart)),
     );
-    if (mounted) _loadCards();
+  }
+
+  List<LibExtra> _extras(List<LibItem> scope, String scopeName) {
+    final words = _wordsOf(scope);
+    final pending = Mastery.notMastered<WordCard>(words, _spellKey).length;
+    return <LibExtra>[
+      LibExtra(
+        emoji: '🏆',
+        title: 'Master Play',
+        subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
+        colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
+        onPressed: () => _masterPlay(words),
+      ),
+      if (scope.length > 1)
+        LibExtra(
+          emoji: '📚',
+          title: 'All words',
+          subtitle: '${words.length} words',
+          colors: const <Color>[Color(0xFFFF9A44), Color(0xFFFC6076)],
+          onPressed: () => _playWords(scopeName.isEmpty ? 'All words' : scopeName, words),
+        ),
+    ];
   }
 
   // Called by the sync server after ANY change made from the phone.
   void _onServerChanged() {
-    _loadCards();
+    _refresh.value = _refresh.value + 1;
   }
 
   Future<String?> _findLocalIp() async {
@@ -179,86 +204,17 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final s = uiScale(context);
-    final keys = _topics.keys.toList();
-
-    Widget body;
-    if (!_loaded) {
-      body = const Center(child: CircularProgressIndicator(color: Colors.white));
-    } else if (keys.isEmpty) {
-      body = Center(
-        child: Text(
-          'No words yet!\nPress "Add Words" and add some from your phone.',
-          textAlign: TextAlign.center,
-          style: kidText(24 * s),
-        ),
-      );
-    } else {
-      final cards = <Widget Function(double, double)>[];
-      final pending = Mastery.notMastered<WordCard>(_allWords, _spellKey).length;
-      cards.add((double w, double h) => BigTile(
-            emoji: '🏆',
-            title: 'Master Play',
-            subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
-            colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
-            s: s,
-            width: w / s,
-            height: h / s,
-            autofocus: true,
-            onPressed: _masterPlay,
-          ));
-      for (var i = 0; i < keys.length; i++) {
-        final topic = keys[i];
-        final index = i;
-        final list = _topics[topic]!;
-        final smart = PlayerStore.active.smart;
-        final left = Mastery.notMastered<WordCard>(list, _spellKey).length;
-        final done = list.length - left;
-        String sub = list.length == 1 ? '1 word' : '${list.length} words';
-        if (smart) {
-          sub = left == 0 ? '✅ all mastered' : '$left to learn${done > 0 ? '  •  ✅$done' : ''}';
-        }
-        cards.add((double w, double h) => BigTile(
-              emoji: emojiForTopic(topic),
-              title: topic,
-              subtitle: sub,
-              colors: kTopicGradients[index % kTopicGradients.length],
-              s: s,
-              width: w / s,
-              height: h / s,
-              onPressed: () => _playTopic(topic),
-            ));
-      }
-      body = AdaptiveGrid(builders: cards, aspect: 1.15, minWidth: 150 * s, maxWidth: 250 * s, gap: 20 * s);
-    }
-
-    return Scaffold(
-      body: KidsBackground(
-        child: SafeArea(
-          child: Padding(
-            padding: tvPadding(s),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: Text('🌈 Pick a Topic!', style: kidText(38 * s))),
-                    ActionButton(
-                      s: s,
-                      icon: Icons.qr_code_2_rounded,
-                      label: 'Add Words',
-                      color: const Color(0xFF00BFA5),
-                      onPressed: _openSyncModal,
-                    ),
-                  ],
-                ),
-                Expanded(child: body),
-                SizedBox(height: size.height * 0.13),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return LibraryBrowser(
+      title: '✏️ Spelling',
+      myClassId: PlayerStore.active.libClass,
+      emptyText: 'No words yet!\nPress "Add Words" and add some from your phone.',
+      loader: _loadItems,
+      onOpen: (LibItem item) => _playWords(item.title, _topics[item.id] ?? <WordCard>[]),
+      extras: _extras,
+      refresh: _refresh,
+      actions: (double s, Future<void> Function() reload) => <Widget>[
+        ActionButton(s: s, icon: Icons.qr_code_2_rounded, label: 'Add Words', color: const Color(0xFF00BFA5), onPressed: _openSyncModal),
+      ],
     );
   }
 }
