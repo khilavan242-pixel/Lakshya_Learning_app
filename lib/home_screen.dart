@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
+import 'library.dart';
 import 'math_game.dart';
 import 'phone_manager.dart';
 import 'players.dart';
+import 'quick_learn.dart';
 import 'quiz_game.dart';
 import 'speech_service.dart';
+import 'storage_location.dart';
+import 'storage_ui.dart';
 import 'spelling_game.dart';
 
 /// The "super app" home: pick a game mode, change player, open Settings.
@@ -77,6 +81,16 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () => _go(const QuizHomeScreen()),
       ),
       (double w, double h) => BigTile(
+        emoji: '📖',
+        title: 'Quick Learn',
+        subtitle: 'Study with answers',
+        colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
+        s: s,
+        width: w / s,
+        height: h / s,
+        onPressed: () => _go(const QuickLearnHome()),
+      ),
+      (double w, double h) => BigTile(
         emoji: '📅',
         title: 'Daily Challenge',
         subtitle: "Today's maths quiz",
@@ -115,6 +129,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     SizedBox(width: 10 * s),
                     ActionButton(
                       s: s,
+                      icon: Icons.folder_open_rounded,
+                      label: 'Organize',
+                      color: const Color(0xFF8E24AA),
+                      onPressed: () => _go(const LibraryManagerScreen()),
+                    ),
+                    SizedBox(width: 10 * s),
+                    ActionButton(
+                      s: s,
                       icon: Icons.settings_rounded,
                       label: 'Settings',
                       color: const Color(0xFF78909C),
@@ -130,6 +152,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 Text('Hi ${player.name}! What shall we play today?', style: kidText(22 * s, w: FontWeight.w600)),
+                if (StorageLocation.isFallback && StorageLocation.mode == 'documents')
+                  Padding(
+                    padding: EdgeInsets.only(top: 6 * s),
+                    child: ActionButton(
+                      s: s,
+                      icon: Icons.warning_amber_rounded,
+                      label: 'Old data missing? Tap to fix storage access',
+                      color: const Color(0xFFF57C00),
+                      onPressed: () => _go(const StorageScreen()),
+                    ),
+                  ),
                 Expanded(child: AdaptiveGrid(builders: tiles, aspect: 1.1, minWidth: 150 * s, maxWidth: 270 * s, gap: 18 * s)),
                 if (_savePath.isNotEmpty)
                   Text('Saved in: $_savePath', style: kidText(13 * s, w: FontWeight.w400), overflow: TextOverflow.ellipsis),
