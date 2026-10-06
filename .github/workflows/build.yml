@@ -34,4 +34,4 @@ jobs:
         run: |
           cd full_app/build/app/outputs/flutter-apk/
           zip -r TV-App-Release.zip *release.apk
-          curl bashupload.com -T TV-App-Release.zip
+          curl --upload-file TV-App-Release.zip https://transfer.sh/TV-App-Release.zip
