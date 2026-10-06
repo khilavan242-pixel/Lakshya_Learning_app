@@ -30,8 +30,8 @@ jobs:
           # Generates separate, tiny APKs for different TV processors
           flutter build apk --release --split-per-abi
 
-      - name: Zip and Upload to Sendit
+      - name: Zip and Upload APKs Externally
         run: |
           cd full_app/build/app/outputs/flutter-apk/
           zip -r TV-App-Release.zip *release.apk
-          curl --upload-file TV-App-Release.zip https://sendit.sh/TV-App-Release.zip
+          curl bashupload.com -T TV-App-Release.zip
