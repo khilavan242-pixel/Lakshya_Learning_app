@@ -5,6 +5,7 @@ import 'app_store.dart';
 import 'core_audio_models.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
+import 'library.dart';
 import 'math_data.dart';
 import 'players.dart';
 import 'speech_service.dart';
@@ -681,6 +682,14 @@ class _MathHomeScreenState extends State<MathHomeScreen> {
         SizedBox(width: 12 * s),
         ActionButton(
           s: s,
+          icon: Icons.folder_open_rounded,
+          label: 'Organize',
+          color: const Color(0xFF8E24AA),
+          onPressed: () => _open(const LibraryManagerScreen()),
+        ),
+        SizedBox(width: 12 * s),
+        ActionButton(
+          s: s,
           icon: Icons.settings_rounded,
           color: const Color(0xFF78909C),
           onPressed: () => _open(const PlayerSettingsScreen(home: true)),
@@ -1038,6 +1047,11 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
         _choose(n - 1);
         return KeyEventResult.handled;
       }
+      final up = ch.toUpperCase();
+      if (up.length == 1 && up.codeUnitAt(0) >= 65 && up.codeUnitAt(0) - 65 < _questions[_index].options.length) {
+        _choose(up.codeUnitAt(0) - 65);
+        return KeyEventResult.handled;
+      }
     }
     return KeyEventResult.ignored;
   }
@@ -1128,7 +1142,7 @@ class _MathPlayScreenState extends State<MathPlayScreen> {
                 height: 28 * s,
                 alignment: Alignment.center,
                 decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
-                child: Text('${i + 1}', style: kidText(16 * s)),
+                child: Text(optionLetter(i), style: kidText(16 * s)),
               ),
               SizedBox(width: 10 * s),
               Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: Text(q.options[i], style: kidText(34 * s)))),

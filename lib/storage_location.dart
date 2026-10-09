@@ -31,6 +31,7 @@ class StorageLocation {
   static String lastRoot = ''; // where the data was last known to be
   static bool isFallback = false; // the wanted place is not writable -> using another place
   static String tier = 'wanted'; // wanted | appdocs | private
+  static bool readBlocked = false; // the folder has old data but Android does not let this app open it
   static String statusNote = '';
   static Directory? _root;
 
@@ -130,13 +131,33 @@ class StorageLocation {
     return '';
   }
 
+  /// 'ok' = readable, 'none' = nothing saved there yet, 'blocked' = exists but this app may not open it
+  /// (typical after reinstalling: Android removes the permission and the old files become unreadable).
+  static Future<String> readState(String root) async {
+    try {
+      await File('$root/data/app_kv.json').readAsString();
+      return 'ok';
+    } on FileSystemException catch (e) {
+      final code = e.osError?.errorCode ?? 0;
+      return code == 2 ? 'none' : 'blocked';
+    } catch (_) {
+      return 'blocked';
+    }
+  }
+
   static Future<void> _resolve() async {
     final priv = await _privateRoot();
     var target = priv;
     tier = 'private';
     if (mode != 'private') {
       final want = _wantedPath();
-      if (await canWrite(want)) {
+      readBlocked = false;
+      var usable = await canWrite(want);
+      if (usable && await readState(want) == 'blocked') {
+        usable = false; // old data is there but unreadable: never write over it
+        readBlocked = true;
+      }
+      if (usable) {
         target = want;
         tier = 'wanted';
       } else if (mode == 'documents') {
@@ -150,6 +171,8 @@ class StorageLocation {
     isFallback = mode != 'private' && tier != 'wanted';
     if (!isFallback) {
       statusNote = '';
+    } else if (readBlocked) {
+      statusNote = 'Your old data is still safe in ${_wantedPath()}, but Android does not let this newly installed app open it. Allow "Files and media" / "All files access" for the app in TV Settings > Apps, then open the app again.';
     } else if (tier == 'appdocs') {
       statusNote = 'The shared Documents folder needs storage permission. Saving in this app\'s own Documents folder on the TV for now: $target';
     } else {
@@ -207,6 +230,17 @@ class StorageLocation {
   }
 
   // ------------------------------------------------------------- switching
+  /// A short report for the Storage screen.
+  static Future<String> diagnose() async {
+    final shared = '$sharedDocuments/$appFolderName';
+    if (!Platform.isAndroid) return 'Saving in: $activePath';
+    final w = await canWrite(shared);
+    final r = await readState(shared);
+    final write = w ? 'yes' : 'NO';
+    final read = r == 'ok' ? 'yes (old data found)' : (r == 'none' ? 'nothing saved there yet' : 'NO (old data is blocked)');
+    return 'Documents folder: can write: $write  |  can read: $read';
+  }
+
   /// Returns null on success, or a message explaining what went wrong.
   /// The app has to be reopened afterwards so every screen reads the new place.
   static Future<String?> switchTo(String newMode, String base) async {

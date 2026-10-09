@@ -56,6 +56,7 @@ class _StorageScreenState extends State<StorageScreen> {
   List<DriveInfo> _drives = <DriveInfo>[];
   bool _access = false;
   bool _busy = false;
+  String _report = '';
 
   @override
   void initState() {
@@ -66,10 +67,12 @@ class _StorageScreenState extends State<StorageScreen> {
   Future<void> _refresh() async {
     final d = await StorageLocation.drives();
     final a = await StorageLocation.hasAccess();
+    final r = await StorageLocation.diagnose();
     if (!mounted) return;
     setState(() {
       _drives = d;
       _access = a;
+      _report = r;
     });
   }
 
@@ -109,7 +112,7 @@ class _StorageScreenState extends State<StorageScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28 * s)),
         title: Text('🔓 Allow storage access', style: kidText(26 * s)),
         content: Text(
-          'Android only lets you do this in the TV\'s own Settings:\n\nSettings > Apps > this app > Permissions > allow "Files and media" / "All files access".\n\nThen come back here and press this button again.\n\nIf your TV has no such option, use an app folder on a USB drive or the internal storage below. They need no permission.',
+          'Android only lets you do this in the TV\'s own Settings:\n\nSettings > Apps > this app > Permissions > allow "Files and media" / "All files access".\n\nThen come back here and press this button again.\n\nComputer tip (works on any Android TV): turn on USB/Wi-Fi debugging, then run\nadb shell appops set com.example.full_app MANAGE_EXTERNAL_STORAGE allow\n\nIf your TV has no such option, use an app folder on a USB drive or the internal storage below. They need no permission.',
           style: TextStyle(fontSize: 18 * s, color: Colors.white),
         ),
         actions: [
@@ -134,6 +137,7 @@ class _StorageScreenState extends State<StorageScreen> {
     final inDocs = StorageLocation.mode == 'documents' && !StorageLocation.isFallback;
     final rows = <Widget>[
       _infoRow(s, 'Saving in now:\n${StorageLocation.activePath}'),
+      if (_report.isNotEmpty) _infoRow(s, _report),
       if (StorageLocation.isFallback) _infoRow(s, '⚠ ${StorageLocation.statusNote}'),
       if (StorageLocation.isFallback && StorageLocation.mode == 'documents')
         _infoRow(s, 'Reinstalling the app removes its permission, so it cannot open your old data in Documents/${StorageLocation.appFolderName}. The data is still safe there.\n1) Allow "Files and media" for this app in the TV Settings > Apps.\n2) Close and open the app again, or press "Documents folder" below. Your old data is used as it is.'),

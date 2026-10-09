@@ -115,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
-                        child: Text('🎈 Kids Super Learning', style: kidText(34 * s)),
+                        child: Text('🎓 $kAppName', style: kidText(34 * s)),
                       ),
                     ),
                     SizedBox(width: 10 * s),

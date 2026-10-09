@@ -50,6 +50,15 @@ class DocStore {
     await tmp.rename('${d.path}/$fileName');
   }
 
+  /// Moves an existing file aside (app_kv.json.old-123) so it can never be lost by accident.
+  static Future<void> keepCopy(String folderName, String fileName) async {
+    try {
+      final dir = await folder(folderName);
+      final f = File('${dir.path}/$fileName');
+      if (await f.exists()) await f.rename('${dir.path}/$fileName.old-${DateTime.now().millisecondsSinceEpoch}');
+    } catch (_) {}
+  }
+
   static Future<void> deleteFile(String folderName, String fileName) async {
     try {
       final d = await folder(folderName);
@@ -95,6 +104,7 @@ class AppKV {
     if (raw is Map) {
       data = Map<String, dynamic>.from(raw);
     } else {
+      await DocStore.keepCopy('data', 'app_kv.json'); // a damaged file is kept aside, not overwritten
       try {
         final p = await SharedPreferences.getInstance();
         for (final k in p.getKeys()) {

@@ -6,6 +6,8 @@ import 'package:shelf_router/shelf_router.dart';
 import 'app_store.dart';
 import 'core_audio_models.dart';
 import 'doc_store.dart';
+import 'learn_model.dart';
+import 'library.dart';
 import 'quiz_model.dart';
 
 // ----------------------------------------------------------------------
@@ -59,6 +61,22 @@ class TVSyncServer {
       );
 
   static const Map<String, String> _jsonHeaders = {'content-type': 'application/json; charset=utf-8'};
+
+  /// Put an item into a Class / Subject folder (names; created when new).
+  static Future<void> _organize(String key, dynamic cls, dynamic subject) async {
+    final c = (cls ?? '').toString().trim();
+    final sj = (subject ?? '').toString().trim();
+    if (c.isEmpty && sj.isEmpty) return;
+    await Library.load();
+    final cl = c.isNotEmpty ? await Library.addClass(c) : null;
+    final sb = sj.isNotEmpty ? await Library.addSubject(sj) : null;
+    await Library.setMeta(key, c: cl?.id, s: sb?.id);
+  }
+
+  static String _offlineFull(String base) => _offlinePageHtml
+      .replaceAll('__TV_BASE__', base)
+      .replaceAll('<!--LEARN_EDITOR-->', _learnEditorHtml)
+      .replaceFirst('</body>', '$_pageCropHtml</body>');
 
   String _clean(dynamic v) => (v ?? '').toString().trim().toUpperCase();
   String _cleanTopic(dynamic v) {
@@ -140,6 +158,15 @@ class TVSyncServer {
             ));
           }
           await CardStore.addCards(newCards);
+          final done = <String>{};
+          for (final item in payload) {
+            if (item is! Map) continue;
+            final topic = _cleanTopic(item['topic']);
+            if (done.contains(topic)) continue;
+            if ((item['class'] ?? '').toString().trim().isEmpty && (item['subject'] ?? '').toString().trim().isEmpty) continue;
+            done.add(topic);
+            await _organize('spell:$topic', item['class'], item['subject']);
+          }
           onChanged();
           return {'status': 'ok', 'added': newCards.length};
         }));
@@ -241,7 +268,7 @@ class TVSyncServer {
     });
 
     router.get('/offline', (Request request) {
-      return Response.ok(_offlinePageHtml.replaceAll('__TV_BASE__', '').replaceFirst('</body>', '$_pageCropHtml</body>'), headers: {'content-type': 'text/html; charset=utf-8'});
+      return Response.ok(_offlineFull(''), headers: {'content-type': 'text/html; charset=utf-8'});
     });
 
     // same page as a downloadable file, with this TV's address built in
@@ -249,7 +276,7 @@ class TVSyncServer {
       final host = request.headers['host'] ?? '';
       final base = host.isEmpty ? '' : 'http://$host';
       return Response.ok(
-        _offlinePageHtml.replaceAll('__TV_BASE__', base).replaceFirst('</body>', '$_pageCropHtml</body>'),
+        _offlineFull(base),
         headers: {
           'content-type': 'text/html; charset=utf-8',
           'content-disposition': 'attachment; filename="KidsLearning_Offline.html"',
@@ -288,6 +315,9 @@ class TVSyncServer {
       try {
         final body = json.decode(await request.readAsString()) as Map<String, dynamic>;
         final saved = await QuizStore.importText((body['text'] ?? '').toString());
+        for (final q in saved) {
+          await _organize('quiz:${q.id}', body['class'], body['subject']);
+        }
         onChanged();
         return Response.ok(
           json.encode({'status': 'ok', 'count': saved.length, 'titles': saved.map((q) => q.title).toList()}),
@@ -304,6 +334,78 @@ class TVSyncServer {
       try {
         final body = json.decode(await request.readAsString()) as Map<String, dynamic>;
         await QuizStore.delete((body['id'] ?? '').toString());
+        onChanged();
+        return Response.ok(json.encode({'status': 'ok'}), headers: _jsonHeaders);
+      } catch (e) {
+        return Response.internalServerError(body: json.encode({'error': '$e'}), headers: _jsonHeaders);
+      }
+    });
+
+    // ---- QUICK LEARN lists (any text / JSON from the phone)
+    router.get('/learn', (Request request) {
+      return Response.ok(_learnPageHtml.replaceAll('<!--LEARN_EDITOR-->', _learnEditorHtml), headers: {'content-type': 'text/html; charset=utf-8'});
+    });
+
+    router.get('/api/learn/sample', (Request request) {
+      return Response.ok(kSampleLearnText, headers: {'content-type': 'text/plain; charset=utf-8'});
+    });
+
+    router.get('/api/library', (Request request) async {
+      try {
+        await Library.load();
+        return Response.ok(
+          json.encode({
+            'classes': Library.classes.map((c) => c.name).toList(),
+            'subjects': Library.subjects.map((c) => c.name).toList(),
+          }),
+          headers: _jsonHeaders,
+        );
+      } catch (e) {
+        return Response.internalServerError(body: json.encode({'error': '$e'}), headers: _jsonHeaders);
+      }
+    });
+
+    router.get('/api/learn/list', (Request request) async {
+      try {
+        final docs = await LearnStore.loadAll();
+        return Response.ok(
+          json.encode({
+            'path': (await DocStore.folder('learn')).path,
+            'lists': docs.map((d) => {'id': d.id, 'title': d.title, 'emoji': d.emoji, 'count': d.cards.length, 'cls': d.cls, 'subject': d.subject}).toList(),
+          }),
+          headers: _jsonHeaders,
+        );
+      } catch (e) {
+        return Response.internalServerError(body: json.encode({'error': '$e'}), headers: _jsonHeaders);
+      }
+    });
+
+    router.post('/api/learn/import', (Request request) async {
+      try {
+        final body = json.decode(await request.readAsString()) as Map<String, dynamic>;
+        final doc = await LearnStore.importText(
+          (body['text'] ?? '').toString(),
+          title: (body['title'] ?? '').toString(),
+          emoji: (body['emoji'] ?? '').toString(),
+          cls: (body['class'] ?? '').toString(),
+          subject: (body['subject'] ?? '').toString(),
+        );
+        await _organize('learn:${doc.id}', doc.cls, doc.subject);
+        onChanged();
+        return Response.ok(json.encode({'status': 'ok', 'title': doc.title, 'count': doc.cards.length}), headers: _jsonHeaders);
+      } on FormatException catch (e) {
+        return Response(400, body: json.encode({'error': e.message}), headers: _jsonHeaders);
+      } catch (e) {
+        return Response.internalServerError(body: json.encode({'error': '$e'}), headers: _jsonHeaders);
+      }
+    });
+
+    router.post('/api/learn/delete', (Request request) async {
+      try {
+        final body = json.decode(await request.readAsString()) as Map<String, dynamic>;
+        final id = (body['id'] ?? '').toString();
+        await LearnStore.delete(id);
+        await Library.removeMeta('learn:$id');
         onChanged();
         return Response.ok(json.encode({'status': 'ok'}), headers: _jsonHeaders);
       } catch (e) {
@@ -554,9 +656,16 @@ a.dl{display:block;text-align:center;background:#7c3aed;color:#fff;text-decorati
     <p class="err hide" id="noStore">This browser blocks saving for this page. Open the page from the TV address instead.</p>
   </div>
 
+  <div class="box">
+    <b>Where to save on the TV (optional)</b>
+    <p class="muted">Class and Subject folder for what you add below. New names are created automatically.</p>
+    <div class="orgrow"><input id="ocls" list="odlc" type="text" placeholder="Class (e.g. Class 1)" autocomplete="off"><input id="osub" list="odls" type="text" placeholder="Subject (e.g. English)" autocomplete="off"><datalist id="odlc"></datalist><datalist id="odls"></datalist></div>
+  </div>
+
   <div class="tabs">
     <button id="tWords" class="sel">Words</button>
     <button id="tQuiz">Quizzes</button>
+    <button id="tLearn">Learn</button>
     <button id="tWait">Waiting (<span id="cnt">0</span>)</button>
   </div>
 
@@ -583,6 +692,14 @@ a.dl{display:block;text-align:center;background:#7c3aed;color:#fff;text-decorati
       <input type="file" id="qfile" accept=".json,.txt,application/json,text/plain">
       <textarea id="qtext" placeholder='{ "title": "My quiz", "questions": [ ... ] }'></textarea>
       <button class="b green" id="saveQuiz">Save quiz (send to TV when connected)</button>
+    </div>
+  </section>
+
+  <section id="sLearn" class="hide">
+    <div class="box">
+      <b>Quick Learn list</b>
+      <!--LEARN_EDITOR-->
+      <button class="b green" id="saveLearn">Save list (send to TV when connected)</button>
     </div>
   </section>
 
@@ -652,6 +769,7 @@ async function check(){ setOnline(await ping()); }
 function setOnline(v){
   online = v;
   render();
+  if (v) refreshLib();
   if (v && pending.length && !syncing) syncNow();
 }
 
@@ -666,8 +784,8 @@ async function syncNow(){
     while (i < pending.length) {
       var it = pending[i];
       if (it.fatal) { i++; continue; }
-      var url = it.type === "words" ? "/api/upload-batch" : "/api/quiz/import";
-      var body = it.type === "words" ? it.items : {text: it.text};
+      var url = it.type === "words" ? "/api/upload-batch" : (it.type === "learn" ? "/api/learn/import" : "/api/quiz/import");
+      var body = it.type === "words" ? it.items : {text: it.text, "class": it.cls || "", subject: it.sub || ""};
       var r;
       try {
         r = await fetch(b + url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
@@ -733,7 +851,8 @@ $("pageCropBtn").onclick = function(){
 $("saveWords").onclick = function(){
   if (!drafts.length){ toast("Add some words first"); return; }
   var topic = clean($("cat").value) || "MIXED";
-  var items = drafts.map(function(d){ return {word: d.word, image_base64: d.image, topic: topic}; });
+  var oc = $("ocls").value.trim(), os = $("osub").value.trim();
+  var items = drafts.map(function(d){ return {word: d.word, image_base64: d.image, topic: topic, "class": oc, subject: os}; });
   pending.push({id: uid(), type: "words", topic: topic, items: items});
   if (!store()){ pending.pop(); return; }
   drafts = [];
@@ -768,13 +887,44 @@ $("saveQuiz").onclick = function(){
     toast("This is not valid JSON - please check it");
     return;
   }
-  pending.push({id: uid(), type: "quiz", text: text, title: title, count: count});
+  pending.push({id: uid(), type: "quiz", text: text, title: title, count: count, cls: $("ocls").value.trim(), sub: $("osub").value.trim()});
   if (!store()){ pending.pop(); return; }
   $("qtext").value = "";
   toast(online ? "Saved - sending to the TV..." : "Saved on this phone - will be sent later");
   render();
   if (online) syncNow();
 };
+
+/* ---------------------------------------------------------- study lists */
+$("saveLearn").onclick = function(){
+  var text = $("ltext").value.trim();
+  if (!text){ toast("Type or paste the list first"); return; }
+  var title = "Study list";
+  var m = text.match(/^#\s*(.+)$/m);
+  if (m) title = m[1].trim();
+  pending.push({id: uid(), type: "learn", text: text, title: title, count: 0, cls: $("ocls").value.trim(), sub: $("osub").value.trim()});
+  if (!store()){ pending.pop(); return; }
+  $("ltext").value = "";
+  if (window.lPreview) window.lPreview();
+  toast(online ? "Saved - sending to the TV..." : "Saved on this phone - will be sent later");
+  render();
+  if (online) syncNow();
+};
+
+/* --------------------------------------------- class / subject suggestions */
+function fillOrg(d){
+  [["odlc", d.classes], ["odls", d.subjects]].forEach(function(p){
+    var dl = $(p[0]); dl.innerHTML = "";
+    (p[1] || []).forEach(function(n){ var o = document.createElement("option"); o.value = n; dl.appendChild(o); });
+  });
+}
+async function refreshLib(){
+  try {
+    var r = await fetch(base() + "/api/library", {cache: "no-store"});
+    if (r.ok){ var d = await r.json(); fillOrg(d); try { localStorage.setItem("kls_lib", JSON.stringify(d)); } catch(e){} }
+  } catch(e){}
+}
+try { fillOrg(JSON.parse(localStorage.getItem("kls_lib") || "{}")); } catch(e){}
 
 /* ------------------------------------------------------ backup file (works even if the browser blocks saving) */
 $("expBtn").onclick = function(){
@@ -800,7 +950,7 @@ $("impBtn").onclick = function(){
           var list = d && Array.isArray(d.pending) ? d.pending : [];
           var n = 0;
           list.forEach(function(it){
-            if (it && (it.type === "words" || it.type === "quiz")){ it.id = uid(); delete it.error; delete it.fatal; pending.push(it); n++; }
+            if (it && (it.type === "words" || it.type === "quiz" || it.type === "learn")){ it.id = uid(); delete it.error; delete it.fatal; pending.push(it); n++; }
           });
           store(); render();
           toast(n + " item(s) loaded from the backup file");
@@ -837,10 +987,10 @@ function renderWait(){
   }
   pending.forEach(function(it, i){
     var row = document.createElement("div"); row.className = "row";
-    var th = document.createElement("div"); th.className = "thumb"; th.textContent = it.type === "words" ? "\uD83D\uDCDD" : "\uD83E\uDDE0";
+    var th = document.createElement("div"); th.className = "thumb"; th.textContent = it.type === "words" ? "\uD83D\uDCDD" : (it.type === "learn" ? "\uD83D\uDCD6" : "\uD83E\uDDE0");
     var info = document.createElement("div"); info.className = "grow";
     var b = document.createElement("b");
-    b.textContent = it.type === "words" ? (it.items.length + " word(s) in " + it.topic) : ("Quiz: " + it.title + (it.count ? " (" + it.count + " questions)" : ""));
+    b.textContent = it.type === "words" ? (it.items.length + " word(s) in " + it.topic) : it.type === "learn" ? ("Study list: " + it.title) : ("Quiz: " + it.title + (it.count ? " (" + it.count + " questions)" : ""));
     var st = document.createElement("div");
     if (it.error){ st.className = "err"; st.textContent = "\u26A0 " + it.error; }
     else { st.className = "muted"; st.textContent = syncing ? "Sending..." : (online ? "Ready to send" : "Waiting for the TV"); }
@@ -866,6 +1016,8 @@ function render(){
 function showTab(t){
   $("sWords").className = t === "w" ? "" : "hide";
   $("sQuiz").className = t === "q" ? "" : "hide";
+  $("sLearn").className = t === "l" ? "" : "hide";
+  $("tLearn").className = t === "l" ? "sel" : "";
   $("sWait").className = t === "x" ? "" : "hide";
   $("tWords").className = t === "w" ? "sel" : "";
   $("tQuiz").className = t === "q" ? "sel" : "";
@@ -873,6 +1025,7 @@ function showTab(t){
 }
 $("tWords").onclick = function(){ showTab("w"); };
 $("tQuiz").onclick = function(){ showTab("q"); };
+$("tLearn").onclick = function(){ showTab("l"); };
 $("tWait").onclick = function(){ showTab("x"); };
 $("syncBtn").onclick = function(){ if (!online) toast("The TV is not reachable yet"); else syncNow(); };
 $("checkBtn").onclick = function(){ check(); toast("Checking..."); };
@@ -888,6 +1041,225 @@ render();
 check();
 setInterval(check, 5000);
 window.addEventListener("online", check);
+</script>
+</body>
+</html>
+''';
+
+  static const String _learnEditorHtml = r'''
+<style>
+.lt{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.lt button{border:0;border-radius:10px;padding:9px 10px;font-weight:700;font-size:13px;color:#fff;background:#8b5cf6;cursor:pointer}
+.lt button.y{background:#f59e0b}.lt button.g{background:#10b981}
+#ltext{width:100%;min-height:220px;padding:12px;border-radius:10px;border:2px solid #8b5cf6;font-size:15px;font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;color:#0f172a}
+#lprev{margin-top:8px}
+.lp{display:flex;gap:6px;align-items:center;border-radius:10px;padding:6px 10px;margin:4px 0;font-size:15px;color:#fff;background:#6366f1;flex-wrap:wrap}
+.lp.h{background:#0f172a;font-weight:700}.lp.q{background:#0ea5e9}.lp.o{background:#14b8a6}
+.lp .ans{background:#16a34a;border-radius:8px;padding:1px 8px;font-weight:700}
+.lp .hid{background:rgba(0,0,0,.28);border-radius:8px;padding:1px 8px}
+</style>
+<p class="muted">Add anything a child should learn: pick a ready-made start below, or paste your own text or JSON. One line = one card.</p>
+<input type="file" id="lfile" accept=".txt,.json,.csv,text/plain,application/json">
+<div class="lt">
+  <button type="button" data-t="syn">Synonyms</button>
+  <button type="button" data-t="ant">Antonyms</button>
+  <button type="button" data-t="hom">Homophones</button>
+  <button type="button" data-t="qa">Question &amp; answer</button>
+  <button type="button" data-t="fill">Fill the blank</button>
+  <button type="button" data-t="opt">4 options</button>
+</div>
+<textarea id="ltext" placeholder="# My list&#10;big = large&#10;happy = glad"></textarea>
+<div class="lt">
+  <button type="button" class="y" id="lMark">&#10024; Mark selected as answer</button>
+  <button type="button" class="g" id="lStar">&#11088; Right option (this line)</button>
+  <button type="button" class="g" id="lEq"> = </button>
+</div>
+<p class="muted">Pairs: <b>word = answer</b> (the right side is hidden in "Hide answers"). Select a word inside a sentence and press &#10024; to hide just that word. For options put * after the right one.</p>
+<b>How the children will see it</b>
+<div id="lprev"></div>
+<script>
+(function(){
+  var T = {
+    syn: "# Synonyms (same meaning)\nbig = large\nhappy = glad\nquick = fast\nbegin = start\n",
+    ant: "# Antonyms (opposites)\nhot = cold\nup = down\nearly = late\nstrong = weak\n",
+    hom: "# Homophones\nsee = sea\nno = know\nwrite = right\nsun = son\n",
+    qa: "# Questions\nQ: Which animal gives us milk?\nA: Cow\nQ: How many days in a week?\nA: 7\n",
+    fill: "# Fill in the blanks\nThe sun rises in the [east].\nA [triangle] has three sides.\n",
+    opt: "# Quick quiz\nQ: Capital of India?\na) Mumbai\nb) Delhi *\nc) Kolkata\nd) Chennai\n"
+  };
+  function ta(){ return document.getElementById("ltext"); }
+  function say(m){ if (typeof toast === "function") toast(m); }
+  function sp(cls, txt){ var e = document.createElement("span"); if (cls) e.className = cls; e.textContent = txt; return e; }
+  function preview(){
+    var box = document.getElementById("lprev"); box.innerHTML = "";
+    var lines = ta().value.split("\n"), n = 0;
+    for (var i = 0; i < lines.length && n < 60; i++){
+      var t = lines[i].trim();
+      if (!t || t.charAt(0) === "@") continue;
+      n++;
+      var d = document.createElement("div"); d.className = "lp";
+      if (t.charAt(0) === "#"){ d.className = "lp h"; d.textContent = t.replace(/^#+\s*/, ""); }
+      else if (/^[Qq]\s*[:.]/.test(t)){ d.className = "lp q"; d.textContent = "\u2753 " + t.replace(/^[Qq]\s*[:.]\s*/, ""); }
+      else if (/^[Aa]\s*[:.]/.test(t)){ d.appendChild(sp("", "\u2714 ")); d.appendChild(sp("ans", t.replace(/^[Aa]\s*[:.]\s*/, ""))); }
+      else if (/^\*?\s*\(?[A-Fa-f][\)\.]\s/.test(t)){
+        d.className = "lp o";
+        var right = /^\*/.test(t) || /\*\s*$/.test(t);
+        d.appendChild(sp(right ? "ans" : "", t.replace(/^\*\s*/, "").replace(/\s*\*\s*$/, "")));
+      } else {
+        var m = t.match(/^(.+?)\s*(=>|->|\u2192|\||=|\s-\s|\s\u2013\s|\s\u2014\s|\s:\s)\s*(.+)$/);
+        if (m){ d.appendChild(sp("", m[1])); d.appendChild(sp("", "\u27A1")); d.appendChild(sp("ans", m[3])); }
+        else {
+          var parts = t.split(/\[([^\]]+)\]/);
+          for (var k = 0; k < parts.length; k++){ if (parts[k]) d.appendChild(k % 2 ? sp("ans", parts[k]) : sp("", parts[k])); }
+        }
+      }
+      box.appendChild(d);
+    }
+  }
+  window.lPreview = preview;
+  ta().addEventListener("input", preview);
+  Array.prototype.forEach.call(document.querySelectorAll(".lt [data-t]"), function(b){
+    b.onclick = function(){ var v = ta().value; ta().value = (v && !/\n$/.test(v) ? v + "\n" : v) + T[b.getAttribute("data-t")]; preview(); };
+  });
+  document.getElementById("lMark").onclick = function(){
+    var e = ta(), a = e.selectionStart, z = e.selectionEnd;
+    if (a === z){ say("First select the answer word, then press this"); return; }
+    e.value = e.value.slice(0, a) + "[" + e.value.slice(a, z) + "]" + e.value.slice(z);
+    preview();
+  };
+  document.getElementById("lStar").onclick = function(){
+    var e = ta(), pos = e.selectionStart, v = e.value;
+    var st = v.lastIndexOf("\n", pos - 1) + 1, en = v.indexOf("\n", pos); if (en < 0) en = v.length;
+    var line = v.slice(st, en);
+    if (/\*\s*$/.test(line)) return;
+    e.value = v.slice(0, st) + line.replace(/\s+$/, "") + " *" + v.slice(en);
+    preview();
+  };
+  document.getElementById("lEq").onclick = function(){
+    var e = ta(), a = e.selectionStart;
+    e.value = e.value.slice(0, a) + " = " + e.value.slice(e.selectionEnd);
+    e.focus(); e.selectionStart = e.selectionEnd = a + 3; preview();
+  };
+  document.getElementById("lfile").onchange = function(){
+    var f = this.files[0]; if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){ ta().value = rd.result; preview(); say("File loaded"); };
+    rd.readAsText(f, "utf-8");
+  };
+  preview();
+})();
+</script>
+''';
+
+  static const String _learnPageHtml = r'''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quick Learn Manager</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:linear-gradient(180deg,#c4b5fd,#e0e7ff 70%,#f5f3ff);min-height:100vh;color:#0f172a;padding-bottom:60px}
+header{background:#6d28d9;color:#fff;padding:14px 12px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
+header a{color:#fff;text-decoration:none;font-size:28px;width:40px;text-align:center}
+header h1{flex:1;text-align:center;font-size:21px;margin:0;font-weight:600;padding-right:40px}
+main{max-width:760px;margin:0 auto;padding:16px}
+.box{background:#fff;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 3px 0 rgba(109,40,217,.25)}
+h2{margin:0 0 8px;font-size:18px}
+.muted{color:#64748b;font-size:14px;margin:4px 0 8px}
+input[type=text]{width:100%;padding:11px;border-radius:10px;border:2px solid #8b5cf6;font-size:15px;margin-bottom:8px;background:#fff;color:#0f172a}
+.orgrow{display:flex;gap:8px}.orgrow input{flex:1;min-width:0}
+button.full{width:100%;margin-top:10px;border:0;border-radius:10px;font-weight:bold;font-size:15px;cursor:pointer;padding:12px 14px;color:#fff;background:#3b82f6}
+button.green{background:#10b981!important}button.red{background:#ef4444!important}button.gray{background:#64748b!important}
+button.sm{border:0;border-radius:10px;font-weight:bold;cursor:pointer;padding:10px 12px;color:#fff;background:#ef4444}
+.row{display:flex;align-items:center;justify-content:space-between;background:#f5f3ff;padding:10px;border-radius:12px;margin-top:8px;gap:8px}
+.row b{flex:1;min-width:0;overflow-wrap:anywhere}
+#msg{margin-top:10px;padding:10px;border-radius:10px;display:none;white-space:pre-wrap;font-size:14px}
+#msg.ok{display:block;background:#dcfce7;color:#166534}
+#msg.bad{display:block;background:#fee2e2;color:#991b1b}
+pre{background:#0f172a;color:#e2e8f0;padding:12px;border-radius:10px;overflow:auto;font-size:12px;max-height:260px}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:12px 18px;border-radius:24px;font-size:15px;display:none;z-index:60;max-width:90%}
+</style>
+</head>
+<body>
+<header><a href="/">&#8249;</a><h1>&#128214; Quick Learn</h1></header>
+<main>
+  <div class="box">
+    <h2>1. Add a study list</h2>
+    <p class="muted">Where should it go on the TV? (optional)</p>
+    <div class="orgrow"><input id="lcls" list="dlc" type="text" placeholder="Class (e.g. Class 3)" autocomplete="off"><input id="lsub" list="dls" type="text" placeholder="Subject (e.g. English)" autocomplete="off"></div>
+    <datalist id="dlc"></datalist><datalist id="dls"></datalist>
+    <!--LEARN_EDITOR-->
+    <button class="full green" id="importBtn">Check &amp; add to TV</button>
+    <div id="msg"></div>
+  </div>
+  <div class="box">
+    <h2>2. Lists on the TV</h2>
+    <p class="muted" id="path"></p>
+    <div id="list"></div>
+  </div>
+  <div class="box">
+    <h2>3. Formats you can use</h2>
+    <p class="muted">Lines: <b>word = answer</b> (also -&gt; | - :), <b>Q:</b> / <b>A:</b>, <b>a) b) c) d)</b> options with * after the right one, <b>[hidden word]</b> inside a sentence. <b>#</b> title, <b>##</b> section, <b>@class</b> / <b>@subject</b> / <b>@emoji</b>. JSON also works: {"title":"..","cards":[{"front":"..","back":".."}]}</p>
+    <pre id="sample">Loading...</pre>
+    <button class="full" id="copySample">Copy this example</button>
+    <button class="full gray" id="copyPrompt">Copy an AI prompt to make lists</button>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+function $(id){ return document.getElementById(id); }
+function toast(msg){ var t = $("toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(toast.timer); toast.timer = setTimeout(function(){ t.style.display = "none"; }, 2400); }
+function showMsg(text, ok){ var m = $("msg"); m.textContent = text; m.className = ok ? "ok" : "bad"; }
+async function loadList(){
+  try {
+    var r = await fetch("/api/learn/list");
+    var d = await r.json();
+    $("path").textContent = "Saved on the TV in: " + d.path;
+    var box = $("list"); box.innerHTML = "";
+    if (!d.lists.length){ box.textContent = "No study lists yet."; return; }
+    d.lists.forEach(function(q){
+      var row = document.createElement("div"); row.className = "row";
+      var b = document.createElement("b");
+      b.textContent = q.emoji + "  " + q.title + "  (" + q.count + " cards)" + (q.cls || q.subject ? "  \u2022 " + [q.cls, q.subject].filter(Boolean).join(" / ") : "");
+      var del = document.createElement("button"); del.className = "sm"; del.textContent = "Delete";
+      del.onclick = async function(){
+        if (!confirm("Delete " + q.title + "?")) return;
+        await fetch("/api/learn/delete", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({id:q.id})});
+        loadList();
+      };
+      row.appendChild(b); row.appendChild(del); box.appendChild(row);
+    });
+  } catch(e){ $("list").textContent = "Cannot reach the TV: " + e.message; }
+}
+$("importBtn").onclick = async function(){
+  var text = $("ltext").value;
+  if (!text.trim()){ showMsg("Type or paste the list first.", false); return; }
+  try {
+    var r = await fetch("/api/learn/import", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:text, "class":$("lcls").value.trim(), subject:$("lsub").value.trim()})});
+    var d = await r.json();
+    if (!r.ok){ showMsg("Problem: " + (d.error || "unknown"), false); return; }
+    showMsg("Added \"" + d.title + "\" with " + d.count + " cards. Open Quick Learn on the TV.", true);
+    $("ltext").value = ""; window.lPreview();
+    loadList();
+  } catch(e){ showMsg("Could not reach the TV: " + e.message, false); }
+};
+var sampleText = "";
+fetch("/api/learn/sample").then(function(r){ return r.text(); }).then(function(t){ sampleText = t.trim(); $("sample").textContent = sampleText; });
+function copyText(t){
+  if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){ toast("Copied!"); }); return; }
+  var ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); toast("Copied!");
+}
+$("copySample").onclick = function(){ copyText(sampleText); };
+$("copyPrompt").onclick = function(){
+  copyText("Make a kids study list as plain text (no explanation). Topic: <TOPIC>. Language: <English or Hindi>. One line per fact, written as  word = answer  (or Q: / A: lines). Use # for the title. Follow exactly this style:\n\n" + sampleText);
+};
+loadList();
+fetch("/api/library").then(function(r){ return r.json(); }).then(function(d){
+  function fill(id, arr){ var dl = $(id); (arr||[]).forEach(function(n){ var o = document.createElement("option"); o.value = n; dl.appendChild(o); }); }
+  fill("dlc", d.classes); fill("dls", d.subjects);
+}).catch(function(){});
 </script>
 </body>
 </html>
@@ -929,6 +1301,8 @@ ul{margin:6px 0 6px 18px;padding:0;font-size:14px}
   <div class="box">
     <h2>1. Add a quiz</h2>
     <p class="muted">Paste JSON below, or choose a .json file from your phone. English and Hindi (Devanagari) both work.</p>
+    <p class="muted">Where should it go on the TV? (optional)</p>
+    <div class="orgrow"><input id="qcls" list="dlc" type="text" placeholder="Class (e.g. Class 1)" autocomplete="off"><input id="qsub" list="dls" type="text" placeholder="Subject (e.g. English)" autocomplete="off"><datalist id="dlc"></datalist><datalist id="dls"></datalist></div>
     <input type="file" id="file" accept=".json,.txt,application/json,text/plain">
     <textarea id="text" placeholder='{ "title": "My quiz", "questions": [ ... ] }'></textarea>
     <button class="full green" id="importBtn">Check &amp; add to TV</button>
@@ -951,6 +1325,7 @@ ul{margin:6px 0 6px 18px;padding:0;font-size:14px}
       <li><b>match</b> - matching: <code>pairs</code> as [{"left":"..","right":".."}]</li>
       <li><b>tf</b> - true / false: <code>"answer": true</code></li>
     </ul>
+    <p class="muted">Tip: <a href="/learn">Quick Learn</a> is the page for study lists (synonyms, opposites, question and answer ...).</p>
     <p class="muted">Optional for the whole quiz: <code>class</code> and <code>subject</code> (for example "Class 1", "English") put it in the right folder on the TV. Optional per question: <code>explanation</code> (read aloud after a correct answer), <code>hint</code>, <code>lang</code> ("en" or "hi"). Several quizzes in one file: {"quizzes": [ ... ]}. A plain list of questions also works.</p>
     <pre id="sample">Loading...</pre>
     <button class="full" id="copySample">Copy this example</button>
@@ -995,7 +1370,7 @@ $("importBtn").onclick = async function(){
   var text = $("text").value;
   if (!text.trim()){ showMsg("Paste some JSON first.", false); return; }
   try {
-    var r = await fetch("/api/quiz/import", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:text})});
+    var r = await fetch("/api/quiz/import", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:text, "class":$("qcls").value.trim(), subject:$("qsub").value.trim()})});
     var d = await r.json();
     if (!r.ok){ showMsg("Problem: " + (d.error || "unknown"), false); return; }
     showMsg("Added " + d.count + " quiz(zes): " + d.titles.join(", "), true);
@@ -1016,6 +1391,10 @@ $("copyPrompt").onclick = function(){
   copyText("Create a kids quiz as JSON only (no explanation). Topic: <TOPIC>. Language: <English or Hindi>. Make 10 questions mixing these types: mcq (4 options), short (one word), fill (with ___), match (4 pairs) and tf (true/false). Use exactly this format:\n\n" + sampleText);
 };
 loadList();
+fetch("/api/library").then(function(r){ return r.json(); }).then(function(d){
+  function fill(id, arr){ var dl = $(id); (arr||[]).forEach(function(n){ var o = document.createElement("option"); o.value = n; dl.appendChild(o); }); }
+  fill("dlc", d.classes); fill("dls", d.subjects);
+}).catch(function(){});
 </script>
 </body>
 </html>
@@ -1097,6 +1476,7 @@ loadList();
     <div class="menu">
       <div class="mrow" onclick="location.href='/offline'"><span>Offline mode - save on phone, send later</span><i class="play">&#9654;</i></div>
       <div class="mrow" onclick="location.href='/quiz'"><span>Quiz Time - add / manage quizzes</span><i class="play">&#9654;</i></div>
+      <div class="mrow" onclick="location.href='/learn'"><span>Quick Learn - add study lists</span><i class="play">&#9654;</i></div>
       <div class="mrow" data-go="add"><span>Add words &amp; photos</span><i class="play">&#9654;</i></div>
       <div class="mrow" data-go="manage"><span>Manage spelling list</span><i class="play">&#9654;</i></div>
       <div class="mrow" data-go="cats"><span>Manage custom category</span><i class="play">&#9654;</i></div>
@@ -1115,6 +1495,8 @@ loadList();
       <input type="text" id="catInput" list="catList" placeholder="MIXED" autocomplete="off">
       <datalist id="catList"></datalist>
       <div class="chips" id="catChips"></div>
+      <p class="muted" style="margin-top:12px">Organize (optional): Class and Subject folder on the TV</p>
+      <div class="orgrow"><input id="wcls" list="wdlc" type="text" placeholder="Class (e.g. Class 1)" autocomplete="off"><input id="wsub" list="wdls" type="text" placeholder="Subject (e.g. English)" autocomplete="off"><datalist id="wdlc"></datalist><datalist id="wdls"></datalist></div>
     </div>
     <div class="box">
       <h2>2. Paste words</h2>
@@ -1365,6 +1747,10 @@ loadList();
     }
 
     // ---------- add words ----------
+    fetch("/api/library").then(r => r.json()).then(d => {
+      const fill = (id, arr) => (arr || []).forEach(n => { const o = document.createElement("option"); o.value = n; el(id).appendChild(o); });
+      fill("wdlc", d.classes); fill("wdls", d.subjects);
+    }).catch(() => {});
     el("catChips").addEventListener("click", e => {
       const c = e.target.closest("[data-cat]");
       if (c) el("catInput").value = c.dataset.cat;
@@ -1373,7 +1759,8 @@ loadList();
       const topic = (el("catInput").value.trim().toUpperCase()) || "MIXED";
       const words = el("bulkInput").value.split(",").map(w => w.trim().toUpperCase()).filter(w => w.length > 0);
       if (!words.length) { toast("Type some words first", true); return; }
-      words.forEach(word => queue.push({ word: word, topic: topic, image_base64: null }));
+      const oc = el("wcls").value.trim(), os = el("wsub").value.trim();
+      words.forEach(word => queue.push({ word: word, topic: topic, image_base64: null, "class": oc, subject: os }));
       el("bulkInput").value = "";
       renderQueue();
     });

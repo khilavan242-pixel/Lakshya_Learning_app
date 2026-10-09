@@ -4,6 +4,12 @@ import 'package:flutter/services.dart';
 import 'app_store.dart';
 
 // ---------------------------------------------------------------- look
+/// The name of the app (shown on the start screen and the home page).
+const String kAppName = 'Little Genius Learn';
+
+/// 0 -> A, 1 -> B ... used for answer options.
+String optionLetter(int i) => String.fromCharCode(65 + i);
+
 TextStyle kidText(double size, {FontWeight w = FontWeight.w800, Color c = Colors.white}) {
   return TextStyle(
     fontSize: size,

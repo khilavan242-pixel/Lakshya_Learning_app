@@ -8,6 +8,7 @@ import 'kids_ui.dart';
 import 'library.dart';
 import 'phone_manager.dart';
 import 'players.dart';
+import 'quick_learn.dart';
 import 'quiz_model.dart';
 import 'speech_service.dart';
 
@@ -151,6 +152,17 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
         colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
         onPressed: () => _play('Master Play', '🏆', 'master', () => _masterItems(sets), master: true),
       ),
+      if (sets.isNotEmpty)
+        LibExtra(
+          emoji: '📖',
+          title: 'Study',
+          subtitle: 'See all questions',
+          colors: const <Color>[Color(0xFF7C4DFF), Color(0xFF40C4FF)],
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => LearnGridScreen(set: LearnSources.fromQuizSets(sets.length == 1 ? sets.first.title : 'All questions', sets))),
+          ),
+        ),
     ];
   }
 
@@ -332,7 +344,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final parts = <String>[_spoken(q.question)];
     if (withOptions && q.isChoice) {
       for (var pos = 0; pos < _order.length; pos++) {
-        parts.add('${pos + 1}. ${q.options[_order[pos]]}');
+        parts.add('${optionLetter(pos)}. ${q.options[_order[pos]]}');
       }
     }
     if (parts.length == 1 && q.lang.isNotEmpty) {
@@ -612,6 +624,11 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
       _pickChoice(n - 1);
       return KeyEventResult.handled;
     }
+    final up = ch.toUpperCase();
+    if (q.isChoice && up.length == 1 && up.codeUnitAt(0) >= 65 && up.codeUnitAt(0) <= 72) {
+      _pickChoice(up.codeUnitAt(0) - 65);
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
 
@@ -669,7 +686,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                   height: 28 * s,
                   alignment: Alignment.center,
                   decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
-                  child: Text('${pos + 1}', style: kidText(16 * s)),
+                  child: Text(optionLetter(pos), style: kidText(16 * s)),
                 ),
               if (!isTf) SizedBox(width: 10 * s),
               Flexible(child: Text(label, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis, style: kidText(isTf ? 36 * s : 26 * s))),

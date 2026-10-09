@@ -2,17 +2,15 @@ import 'package:flutter/material.dart';
 import 'app_store.dart';
 import 'core_audio_models.dart';
 import 'home_screen.dart';
+import 'kids_ui.dart';
 import 'math_game.dart';
 import 'players.dart';
 import 'storage_location.dart';
 
-void main() async {
+/// The first picture appears at once; the slow work (storage, sounds, saved data)
+/// happens behind the splash screen instead of a black screen.
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await StorageLocation.init(); // decides where all data is saved (Documents by default)
-  await GameAudioService.instance.init();
-  await CardStore.init(); // also moves old SharedPreferences data into the Documents folder
-  await PlayerStore.init(); // children, per-child settings and learning memory
-  await MathStore.init();
   runApp(const KidsSuperApp());
 }
 
@@ -21,7 +19,7 @@ class KidsSuperApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Kids Super Learning',
+      title: kAppName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -29,7 +27,71 @@ class KidsSuperApp extends StatelessWidget {
         colorSchemeSeed: Colors.deepPurple,
         scaffoldBackgroundColor: Colors.transparent,
       ),
-      home: const HomeScreen(),
+      home: const BootGate(),
+    );
+  }
+}
+
+class BootGate extends StatefulWidget {
+  const BootGate({super.key});
+  @override
+  State<BootGate> createState() => _BootGateState();
+}
+
+class _BootGateState extends State<BootGate> {
+  bool _ready = false;
+  String _msg = 'Starting...';
+
+  @override
+  void initState() {
+    super.initState();
+    _boot();
+  }
+
+  void _say(String m) {
+    if (mounted) setState(() => _msg = m);
+  }
+
+  Future<void> _boot() async {
+    try {
+      _say('Opening your saved data...');
+      await StorageLocation.init(); // decides where all data is saved (Documents by default)
+      _say('Loading players and settings...');
+      await Future.wait(<Future<void>>[CardStore.init(), PlayerStore.init(), MathStore.init()]);
+      _say('Getting the sounds ready...');
+      // Sound start-up can be slow on a TV: wait at most 3 seconds, it keeps loading in the background.
+      await Future.any<void>(<Future<void>>[
+        () async {
+          await GameAudioService.instance.init();
+        }(),
+        Future<void>.delayed(const Duration(seconds: 3)),
+      ]);
+    } catch (e) {
+      _say('Almost ready...');
+    }
+    if (mounted) setState(() => _ready = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ready) return const HomeScreen();
+    final s = uiScale(context);
+    return Scaffold(
+      body: KidsBackground(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('🎓', style: TextStyle(fontSize: 90 * s)),
+              Text(kAppName, style: kidText(46 * s)),
+              SizedBox(height: 18 * s),
+              SizedBox(width: 44 * s, height: 44 * s, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 5)),
+              SizedBox(height: 14 * s),
+              Text(_msg, style: kidText(20 * s, w: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

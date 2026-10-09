@@ -9,6 +9,7 @@ import 'core_audio_models.dart';
 import 'kids_ui.dart';
 import 'library.dart';
 import 'players.dart';
+import 'quick_learn.dart';
 import 'sync_server.dart';
 
 // --------------------------------------------------------- 1. LOBBY
@@ -113,6 +114,17 @@ class _TopicLobbyScreenState extends State<TopicLobbyScreen> {
         colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
         onPressed: () => _masterPlay(words),
       ),
+      if (words.isNotEmpty)
+        LibExtra(
+          emoji: '📖',
+          title: 'Study',
+          subtitle: 'See all words',
+          colors: const <Color>[Color(0xFF7C4DFF), Color(0xFF40C4FF)],
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => LearnGridScreen(set: LearnSources.fromWords(scopeName.isEmpty ? 'All words' : scopeName, words))),
+          ),
+        ),
       if (scope.length > 1)
         LibExtra(
           emoji: '📚',

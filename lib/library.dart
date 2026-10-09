@@ -3,6 +3,7 @@ import 'app_store.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'players.dart';
+import 'learn_model.dart';
 import 'quiz_model.dart';
 import 'speech_service.dart';
 
@@ -34,9 +35,9 @@ class LibSubject {
   Map<String, String> toJson() => <String, String>{'id': id, 'name': name, 'emoji': emoji};
 }
 
-/// One thing a child can open: a spelling topic or a quiz set.
+/// One thing a child can open: a spelling topic, a quiz set or a study list.
 class LibItem {
-  final String kind; // 'quiz' | 'spell'
+  final String kind; // 'quiz' | 'spell' | 'learn'
   final String id; // quiz id, or the spelling topic name
   String title;
   String emoji;
@@ -259,6 +260,19 @@ class Library {
     }
   }
 
+  /// Study lists from the phone may carry "cls" / "subject" - sort them automatically.
+  static Future<void> syncLearn(List<LearnDoc> docs) async {
+    await load();
+    for (final d in docs) {
+      final key = 'learn:${d.id}';
+      if (meta.containsKey(key)) continue;
+      if (d.cls.isEmpty && d.subject.isEmpty) continue;
+      final cl = d.cls.isNotEmpty ? await addClass(d.cls) : null;
+      final sb = d.subject.isNotEmpty ? await addSubject(d.subject) : null;
+      await setMeta(key, c: cl?.id ?? '', s: sb?.id ?? '');
+    }
+  }
+
   static Future<List<LibItem>> allItems() async {
     await load();
     final out = <LibItem>[];
@@ -266,6 +280,11 @@ class Library {
     await syncQuizzes(quizzes);
     for (final q in quizzes) {
       out.add(LibItem(kind: 'quiz', id: q.id, title: q.title, emoji: q.emoji, subtitle: '🧠 ${q.questions.length} questions', count: q.questions.length));
+    }
+    final docs = await LearnStore.loadAll();
+    await syncLearn(docs);
+    for (final d in docs) {
+      out.add(LibItem(kind: 'learn', id: d.id, title: d.title, emoji: d.emoji, subtitle: '📖 ${d.cards.length} cards', count: d.cards.length));
     }
     final cards = await CardStore.loadCards();
     final counts = <String, int>{};
@@ -866,6 +885,8 @@ class _LibraryManagerScreenState extends State<LibraryManagerScreen> {
           final q = p.quizIds;
           if (q != null && q.contains(it.id)) p.quizIds = q.where((String x) => x != it.id).toList();
         }
+      } else if (it.kind == 'learn') {
+        await LearnStore.delete(it.id);
       } else {
         for (final c in cards.where((c) => c.topic == it.id).toList()) {
           await CardStore.deleteCard(c.id);
