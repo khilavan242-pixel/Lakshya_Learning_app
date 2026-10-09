@@ -33,6 +33,7 @@ class StorageLocation {
   static String tier = 'wanted'; // wanted | appdocs | private
   static bool readBlocked = false; // the folder has old data but Android does not let this app open it
   static String statusNote = '';
+  static bool hideWarning = false; // the user chose to keep using the app folder and hide the home-page warning
   static Directory? _root;
 
   static String get activePath => _root?.path ?? '';
@@ -72,7 +73,7 @@ class StorageLocation {
     try {
       final f = await _configFile();
       await f.writeAsString(
-        json.encode(<String, dynamic>{'mode': mode, 'customBase': customBase, 'lastRoot': lastRoot}),
+        json.encode(<String, dynamic>{'mode': mode, 'customBase': customBase, 'lastRoot': lastRoot, 'hideWarning': hideWarning}),
         flush: true,
       );
     } catch (_) {}
@@ -89,6 +90,7 @@ class StorageLocation {
           mode = (m['mode'] ?? 'documents').toString();
           customBase = (m['customBase'] ?? '').toString();
           lastRoot = (m['lastRoot'] ?? '').toString();
+          hideWarning = m['hideWarning'] == true;
           firstRun = false;
         }
       }
@@ -172,7 +174,7 @@ class StorageLocation {
     if (!isFallback) {
       statusNote = '';
     } else if (readBlocked) {
-      statusNote = 'Your old data is still safe in ${_wantedPath()}, but Android does not let this newly installed app open it. Allow "Files and media" / "All files access" for the app in TV Settings > Apps, then open the app again.';
+      statusNote = 'Your old data is still safe in ${_wantedPath()}, but Android does not let this newly installed app open it. If your TV has no permission option, keep using the app folder and use "Backup & restore" on the phone page so nothing is lost when you reinstall.';
     } else if (tier == 'appdocs') {
       statusNote = 'The shared Documents folder needs storage permission. Saving in this app\'s own Documents folder on the TV for now: $target';
     } else {
@@ -239,6 +241,11 @@ class StorageLocation {
     final write = w ? 'yes' : 'NO';
     final read = r == 'ok' ? 'yes (old data found)' : (r == 'none' ? 'nothing saved there yet' : 'NO (old data is blocked)');
     return 'Documents folder: can write: $write  |  can read: $read';
+  }
+
+  static Future<void> setHideWarning(bool v) async {
+    hideWarning = v;
+    await _saveConfig();
   }
 
   /// Returns null on success, or a message explaining what went wrong.

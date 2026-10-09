@@ -341,6 +341,61 @@ class TVSyncServer {
       }
     });
 
+    // ---- BACKUP & RESTORE (keeps everything safe across uninstall / reinstall)
+    router.get('/backup', (Request request) {
+      return Response.ok(_backupPageHtml, headers: {'content-type': 'text/html; charset=utf-8'});
+    });
+
+    router.get('/api/backup', (Request request) async {
+      try {
+        final root = await DocStore.root();
+        final files = <Map<String, String>>[];
+        await for (final e in root.list(recursive: true, followLinks: false)) {
+          if (e is! File) continue;
+          var rel = e.path.substring(root.path.length).replaceAll('\\', '/');
+          while (rel.startsWith('/')) {
+            rel = rel.substring(1);
+          }
+          if (rel.isEmpty || rel.endsWith('.tmp')) continue;
+          files.add({'path': rel, 'b64': base64.encode(await e.readAsBytes())});
+        }
+        return Response.ok(
+          json.encode({'kls_backup': 1, 'files': files}),
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'content-disposition': 'attachment; filename="LittleGeniusLearn_backup.json"',
+          },
+        );
+      } catch (e) {
+        return Response.internalServerError(body: json.encode({'error': '$e'}), headers: _jsonHeaders);
+      }
+    });
+
+    router.post('/api/restore', (Request request) async {
+      try {
+        final body = json.decode(await request.readAsString());
+        if (body is! Map || body['kls_backup'] == null || body['files'] is! List) {
+          return Response(400, body: json.encode({'error': 'This is not a Little Genius Learn backup file.'}), headers: _jsonHeaders);
+        }
+        final root = await DocStore.root();
+        var n = 0;
+        for (final f in body['files'] as List) {
+          if (f is! Map) continue;
+          final rel = (f['path'] ?? '').toString();
+          if (rel.isEmpty || rel.startsWith('/') || rel.contains('..') || rel.contains('\\')) continue;
+          final file = File('${root.path}/$rel');
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(base64.decode((f['b64'] ?? '').toString()), flush: true);
+          n++;
+        }
+        // the app reads its data once at start - close it so the restored data is loaded on the next open
+        Future<void>.delayed(const Duration(milliseconds: 1500), () => exit(0));
+        return Response.ok(json.encode({'status': 'ok', 'files': n}), headers: _jsonHeaders);
+      } catch (e) {
+        return Response.internalServerError(body: json.encode({'error': '$e'}), headers: _jsonHeaders);
+      }
+    });
+
     // ---- QUICK LEARN lists (any text / JSON from the phone)
     router.get('/learn', (Request request) {
       return Response.ok(_learnPageHtml.replaceAll('<!--LEARN_EDITOR-->', _learnEditorHtml), headers: {'content-type': 'text/html; charset=utf-8'});
@@ -1265,6 +1320,68 @@ fetch("/api/library").then(function(r){ return r.json(); }).then(function(d){
 </html>
 ''';
 
+  static const String _backupPageHtml = r'''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backup and Restore</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:linear-gradient(180deg,#8fd0f5,#d6efff 70%,#e9f7ff);min-height:100vh;color:#0f172a;padding-bottom:50px}
+header{background:#3f6fbf;color:#fff;padding:14px 12px;display:flex;align-items:center;gap:10px}
+header a{color:#fff;text-decoration:none;font-size:28px;width:40px;text-align:center}
+header h1{flex:1;text-align:center;font-size:21px;margin:0;font-weight:600;padding-right:40px}
+main{max-width:760px;margin:0 auto;padding:16px}
+.box{background:#fff;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 3px 0 rgba(30,64,200,.25)}
+h2{margin:0 0 8px;font-size:18px}
+.muted{color:#64748b;font-size:14px;margin:4px 0 8px}
+a.btn,button{display:block;width:100%;text-align:center;border:none;border-radius:10px;font-weight:bold;font-size:16px;padding:14px;color:#fff;background:#10b981;text-decoration:none;margin-top:10px;cursor:pointer}
+button.orange{background:#f59e0b}
+#msg{margin-top:10px;padding:10px;border-radius:10px;display:none;white-space:pre-wrap;font-size:14px}
+#msg.ok{display:block;background:#dcfce7;color:#166534}
+#msg.bad{display:block;background:#fee2e2;color:#991b1b}
+</style>
+</head>
+<body>
+<header><a href="/">&#8249;</a><h1>Backup &amp; restore</h1></header>
+<main>
+  <div class="box">
+    <h2>1. Before you uninstall or reinstall</h2>
+    <p class="muted">Saves all words, photos, quizzes, study lists, players and scores into one file on this phone.</p>
+    <a class="btn" href="/api/backup" download="LittleGeniusLearn_backup.json">Download backup to this phone</a>
+  </div>
+  <div class="box">
+    <h2>2. After you reinstall</h2>
+    <p class="muted">Choose the backup file. The TV app closes by itself - open it again and everything is back.</p>
+    <input type="file" id="file" accept=".json,application/json">
+    <button class="orange" id="go">Restore on the TV</button>
+    <div id="msg"></div>
+  </div>
+</main>
+<script>
+function $(id){ return document.getElementById(id); }
+function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = ok ? "ok" : "bad"; }
+$("go").onclick = function(){
+  var f = $("file").files[0];
+  if (!f){ showMsg("Choose the backup file first.", false); return; }
+  var rd = new FileReader();
+  rd.onload = async function(){
+    try {
+      var r = await fetch("/api/restore", {method:"POST", headers:{"Content-Type":"application/json"}, body: rd.result});
+      var d = await r.json();
+      if (!r.ok){ showMsg("Problem: " + (d.error || "unknown"), false); return; }
+      showMsg("Restored " + d.files + " files. The TV app is closing - open it again.", true);
+    } catch(e){ showMsg("Could not reach the TV: " + e.message, false); }
+  };
+  rd.readAsText(f, "utf-8");
+};
+</script>
+</body>
+</html>
+''';
+
   static const String _quizPageHtml = r'''
 <!DOCTYPE html>
 <html lang="en">
@@ -1476,6 +1593,7 @@ fetch("/api/library").then(function(r){ return r.json(); }).then(function(d){
     <div class="menu">
       <div class="mrow" onclick="location.href='/offline'"><span>Offline mode - save on phone, send later</span><i class="play">&#9654;</i></div>
       <div class="mrow" onclick="location.href='/quiz'"><span>Quiz Time - add / manage quizzes</span><i class="play">&#9654;</i></div>
+      <div class="mrow" onclick="location.href='/backup'"><span>Backup &amp; restore (safe reinstall)</span><i class="play">&#9654;</i></div>
       <div class="mrow" onclick="location.href='/learn'"><span>Quick Learn - add study lists</span><i class="play">&#9654;</i></div>
       <div class="mrow" data-go="add"><span>Add words &amp; photos</span><i class="play">&#9654;</i></div>
       <div class="mrow" data-go="manage"><span>Manage spelling list</span><i class="play">&#9654;</i></div>

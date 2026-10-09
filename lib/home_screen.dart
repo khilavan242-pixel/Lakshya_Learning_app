@@ -152,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 Text('Hi ${player.name}! What shall we play today?', style: kidText(22 * s, w: FontWeight.w600)),
-                if (StorageLocation.isFallback && StorageLocation.mode == 'documents')
+                if (StorageLocation.isFallback && StorageLocation.mode == 'documents' && !StorageLocation.hideWarning)
                   Padding(
                     padding: EdgeInsets.only(top: 6 * s),
                     child: ActionButton(

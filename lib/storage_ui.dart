@@ -112,7 +112,7 @@ class _StorageScreenState extends State<StorageScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28 * s)),
         title: Text('🔓 Allow storage access', style: kidText(26 * s)),
         content: Text(
-          'Android only lets you do this in the TV\'s own Settings:\n\nSettings > Apps > this app > Permissions > allow "Files and media" / "All files access".\n\nThen come back here and press this button again.\n\nComputer tip (works on any Android TV): turn on USB/Wi-Fi debugging, then run\nadb shell appops set com.example.full_app MANAGE_EXTERNAL_STORAGE allow\n\nIf your TV has no such option, use an app folder on a USB drive or the internal storage below. They need no permission.',
+          'Android only lets you do this in the TV\'s own Settings:\n\nSettings > Apps > this app > Permissions > allow "Files and media" / "All files access".\n\nThen come back here and press this button again.\n\nComputer tip (works on any Android TV): turn on USB/Wi-Fi debugging, then run\nadb shell appops set com.example.full_app MANAGE_EXTERNAL_STORAGE allow\n\nIf your TV shows no such option (many do not), press the orange hide button on this screen, and use \"Backup & restore\" on the phone page before you reinstall. Or use an app folder on a USB drive or the internal storage below. They need no permission.',
           style: TextStyle(fontSize: 18 * s, color: Colors.white),
         ),
         actions: [
@@ -141,6 +141,17 @@ class _StorageScreenState extends State<StorageScreen> {
       if (StorageLocation.isFallback) _infoRow(s, '⚠ ${StorageLocation.statusNote}'),
       if (StorageLocation.isFallback && StorageLocation.mode == 'documents')
         _infoRow(s, 'Reinstalling the app removes its permission, so it cannot open your old data in Documents/${StorageLocation.appFolderName}. The data is still safe there.\n1) Allow "Files and media" for this app in the TV Settings > Apps.\n2) Close and open the app again, or press "Documents folder" below. Your old data is used as it is.'),
+      if (StorageLocation.isFallback && StorageLocation.mode == 'documents')
+        SettingLinkRow(
+          label: StorageLocation.hideWarning ? '🔔 Show the home-page warning again' : '✅ My TV has no permission option - keep the app folder and hide the warning',
+          s: s,
+          onPressed: () async {
+            await StorageLocation.setHideWarning(!StorageLocation.hideWarning);
+            if (!mounted) return;
+            setState(() {});
+            showKidsSnack(context, StorageLocation.hideWarning ? 'Warning hidden. Use Backup & restore on the phone page to keep your data safe.' : 'Warning will show on the home page.');
+          },
+        ),
       SettingLinkRow(
         label: '📁 Documents folder (default)',
         value: inDocs ? '✅ in use' : null,
