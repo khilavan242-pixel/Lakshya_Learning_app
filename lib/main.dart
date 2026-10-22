@@ -6,6 +6,7 @@ import 'kids_ui.dart';
 import 'math_game.dart';
 import 'players.dart';
 import 'storage_location.dart';
+import 'who_screen.dart';
 
 /// The first picture appears at once; the slow work (storage, sounds, saved data)
 /// happens behind the splash screen instead of a black screen.
@@ -40,6 +41,7 @@ class BootGate extends StatefulWidget {
 
 class _BootGateState extends State<BootGate> {
   bool _ready = false;
+  bool _chosen = false;
   String _msg = 'Starting...';
 
   @override
@@ -74,6 +76,9 @@ class _BootGateState extends State<BootGate> {
 
   @override
   Widget build(BuildContext context) {
+    if (_ready && PlayerStore.players.length > 1 && !_chosen) {
+      return WhoScreen(onDone: () => setState(() => _chosen = true));
+    }
     if (_ready) return const HomeScreen();
     final s = uiScale(context);
     return Scaffold(
