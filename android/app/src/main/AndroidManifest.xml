@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Leanback requirement for TV -->
-    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
@@ -13,9 +13,9 @@
    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <application
-        android:label="Kids Spelling TV"
+        android:label="GyanTara"
         android:icon="@mipmap/ic_launcher"
-        android:banner="@mipmap/ic_launcher"
+        android:banner="@drawable/banner"
         android:isGame="true">
         
         <!-- YOU MUST ADD THIS META-DATA TAG HERE -->
@@ -34,6 +34,7 @@
             
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
