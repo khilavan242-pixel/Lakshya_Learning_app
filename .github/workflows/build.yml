@@ -22,6 +22,8 @@ jobs:
           flutter create full_app
           cp -r lib full_app/
           cp pubspec.yaml full_app/
+          cp -r assets full_app/
+          cp -r android/app/src/main/res/. full_app/android/app/src/main/res/
           cp android/app/src/main/AndroidManifest.xml full_app/android/app/src/main/
 
       - name: Build Split APKs
