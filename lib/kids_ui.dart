@@ -20,8 +20,17 @@ TextStyle kidText(double size, {FontWeight w = FontWeight.w800, Color c = Colors
   );
 }
 
+/// True on a phone held upright (narrow screen). TVs and landscape screens are not "phone".
+bool isPhone(BuildContext context) {
+  final z = MediaQuery.of(context).size;
+  return z.width < 700 && z.height > z.width;
+}
+
 double uiScale(BuildContext context) {
-  return (MediaQuery.of(context).size.height / 540).clamp(0.85, 2.5).toDouble();
+  final z = MediaQuery.of(context).size;
+  // Upright phone: scale by width, otherwise the tall screen would blow everything up.
+  if (z.width < 700 && z.height > z.width) return (z.width / 440).clamp(0.8, 1.3).toDouble();
+  return (z.height / 540).clamp(0.85, 2.5).toDouble();
 }
 
 const List<Color> kTileColors = [

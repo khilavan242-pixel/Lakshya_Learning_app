@@ -103,6 +103,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ];
 
+    if (isPhone(context)) return _phoneHome(context, s, player, tiles);
+
     return Scaffold(
       body: KidsBackground(
         child: SafeArea(
@@ -186,6 +188,80 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Widget _phoneHome(BuildContext context, double s, Player player, List<Widget Function(double, double)> tiles) {
+    Widget chipBtn(IconData icon, String label, Color c, VoidCallback f) => Expanded(
+          child: TVFocusable(
+            onPressed: f,
+            builder: (BuildContext context, bool focused) => Container(
+              padding: EdgeInsets.symmetric(vertical: 10 * s),
+              decoration: BoxDecoration(
+                color: c.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(18 * s),
+                border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 3),
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, color: Colors.white, size: 24 * s),
+                SizedBox(height: 2 * s),
+                Text(label, style: kidText(12 * s), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ]),
+            ),
+          ),
+        );
+    return Scaffold(
+      body: KidsBackground(
+        child: SafeArea(
+          child: LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
+            const gap = 12.0;
+            final tileW = (box.maxWidth - 28 - gap) / 2;
+            final tileH = tileW / 1.15;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.asset('assets/logo.png', width: 40 * s, height: 40 * s)),
+                    SizedBox(width: 10 * s),
+                    Expanded(child: Text(kAppName, style: kidText(28 * s))),
+                    GestureDetector(
+                      onTap: () => _go(const PlayersScreen()),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 12 * s, vertical: 7 * s),
+                        decoration: BoxDecoration(color: const Color(0xFF26A69A), borderRadius: BorderRadius.circular(30 * s)),
+                        child: Text('${player.emoji} ${player.name}', style: kidText(16 * s), maxLines: 1),
+                      ),
+                    ),
+                  ]),
+                  SizedBox(height: 12 * s),
+                  Row(children: [
+                    chipBtn(Icons.add_circle_rounded, 'Add', const Color(0xFFF59E0B), () => _go(const AddContentScreen())),
+                    SizedBox(width: 8 * s),
+                    chipBtn(Icons.folder_open_rounded, 'Organize', const Color(0xFF8E24AA), () => _go(const LibraryManagerScreen())),
+                    SizedBox(width: 8 * s),
+                    chipBtn(Icons.settings_rounded, 'Settings', const Color(0xFF607D8B), () => _go(const PlayerSettingsScreen(home: true))),
+                    SizedBox(width: 8 * s),
+                    chipBtn(Icons.qr_code_2_rounded, 'Share', const Color(0xFF00A38C), () => showPhoneManager(context)),
+                  ]),
+                  SizedBox(height: 14 * s),
+                  _GreetingRow(player: player, s: s, compact: true),
+                  SizedBox(height: 12 * s),
+                  _MissionCard(s: s, grade: player.grade, onOpen: _go, compact: true),
+                  SizedBox(height: 14 * s),
+                  Wrap(spacing: gap, runSpacing: gap, children: [for (final b in tiles) SizedBox(width: tileW, height: tileH, child: b(tileW, tileH))]),
+                  if (_savePath.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: 14 * s),
+                      child: Text('Saved in: $_savePath', style: kidText(11 * s, w: FontWeight.w400), textAlign: TextAlign.center),
+                    ),
+                ],
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
 }
 
 
@@ -200,7 +276,8 @@ String _greeting() {
 class _GreetingRow extends StatelessWidget {
   final Player player;
   final double s;
-  const _GreetingRow({required this.player, required this.s});
+  final bool compact;
+  const _GreetingRow({required this.player, required this.s, this.compact = false});
 
   Widget _chip(String text, Color c) => Container(
         padding: EdgeInsets.symmetric(horizontal: 14 * s, vertical: 6 * s),
@@ -210,6 +287,19 @@ class _GreetingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${_greeting()}, ${player.name}!', style: kidText(24 * s)),
+        SizedBox(height: 8 * s),
+        ValueListenableBuilder<int>(
+          valueListenable: Progress.changed,
+          builder: (BuildContext context, int _, Widget? __) => Wrap(spacing: 10 * s, runSpacing: 6 * s, children: [
+            _chip('\u{1F525} ${Progress.streak} day streak', const Color(0xFFFF7B6B)),
+            _chip('\u2B50 ${Progress.stars} stars', const Color(0xFFFFB84D)),
+          ]),
+        ),
+      ]);
+    }
     return Row(
       children: [
         Expanded(
@@ -240,7 +330,8 @@ class _MissionCard extends StatelessWidget {
   final double s;
   final int grade;
   final Future<void> Function(Widget screen) onOpen;
-  const _MissionCard({required this.s, required this.grade, required this.onOpen});
+  final bool compact;
+  const _MissionCard({required this.s, required this.grade, required this.onOpen, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
@@ -282,6 +373,45 @@ class _MissionCard extends StatelessWidget {
           );
         }
 
+        final info = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(all ? 'MISSION COMPLETE!' : "TODAY'S MISSION", style: kidText(15 * s, c: const Color(0xFFFFD9A0))),
+            SizedBox(height: 2 * s),
+            Text(
+              all ? 'Great job! Play more to earn extra stars.' : 'Do ${Progress.stepGoal} in each to finish. $doneCount of ${steps.length} done.',
+              style: kidText(18 * s, w: FontWeight.w600),
+            ),
+            SizedBox(height: 8 * s),
+            Wrap(spacing: 10 * s, runSpacing: 6 * s, children: [for (var i = 0; i < steps.length; i++) pill(i)]),
+          ],
+        );
+        final startBtn = TVFocusable(
+          autofocus: true,
+          scale: 1.1,
+          onPressed: () => onOpen(steps[next].screen()),
+          builder: (BuildContext context, bool focused) => AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            padding: EdgeInsets.symmetric(horizontal: 26 * s, vertical: 14 * s),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFB84D),
+              borderRadius: BorderRadius.circular(40 * s),
+              border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 4 * s),
+              boxShadow: [BoxShadow(color: focused ? const Color(0x99FFB84D) : Colors.black26, blurRadius: focused ? 30 : 8)],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.play_arrow_rounded, size: 34 * s, color: const Color(0xFF1A1300)),
+                SizedBox(width: 6 * s),
+                Text(all ? 'Play more' : 'Start ${steps[next].label}', style: kidText(22 * s, c: const Color(0xFF1A1300))),
+              ],
+            ),
+          ),
+        );
+
         return Container(
           padding: EdgeInsets.fromLTRB(22 * s, 14 * s, 22 * s, 14 * s),
           decoration: BoxDecoration(
@@ -289,48 +419,11 @@ class _MissionCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(26 * s),
             boxShadow: const [BoxShadow(color: Color(0x663A2F9E), blurRadius: 24, offset: Offset(0, 8))],
           ),
-          child: Row(
+          child: compact ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [info, SizedBox(height: 12 * s), startBtn]) : Row(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(all ? 'MISSION COMPLETE!' : "TODAY'S MISSION", style: kidText(15 * s, c: const Color(0xFFFFD9A0))),
-                    SizedBox(height: 2 * s),
-                    Text(
-                      all ? 'Great job! Play more to earn extra stars.' : 'Do ${Progress.stepGoal} in each to finish. $doneCount of ${steps.length} done.',
-                      style: kidText(18 * s, w: FontWeight.w600),
-                    ),
-                    SizedBox(height: 8 * s),
-                    Wrap(spacing: 10 * s, runSpacing: 6 * s, children: [for (var i = 0; i < steps.length; i++) pill(i)]),
-                  ],
-                ),
-              ),
+              Expanded(child: info),
               SizedBox(width: 16 * s),
-              TVFocusable(
-                autofocus: true,
-                scale: 1.1,
-                onPressed: () => onOpen(steps[next].screen()),
-                builder: (BuildContext context, bool focused) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 140),
-                  padding: EdgeInsets.symmetric(horizontal: 26 * s, vertical: 14 * s),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFB84D),
-                    borderRadius: BorderRadius.circular(40 * s),
-                    border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 4 * s),
-                    boxShadow: [BoxShadow(color: focused ? const Color(0x99FFB84D) : Colors.black26, blurRadius: focused ? 30 : 8)],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.play_arrow_rounded, size: 34 * s, color: const Color(0xFF1A1300)),
-                      SizedBox(width: 6 * s),
-                      Text(all ? 'Play more' : 'Start ${steps[next].label}', style: kidText(22 * s, c: const Color(0xFF1A1300))),
-                    ],
-                  ),
-                ),
-              ),
+              startBtn,
               SizedBox(width: 14 * s),
               Text('\u{1F989}', style: TextStyle(fontSize: 62 * s)),
             ],
