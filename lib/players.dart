@@ -5,6 +5,7 @@ import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'library.dart';
 import 'math_data.dart';
+import 'progress.dart';
 import 'quiz_model.dart';
 import 'storage_location.dart';
 import 'storage_ui.dart';
@@ -129,6 +130,7 @@ class PlayerStore {
     if (players.isEmpty) await _migrate();
     if (!players.any((Player p) => p.id == activeId)) activeId = players.first.id;
     await Mastery.load(activeId);
+    await Progress.load(activeId);
   }
 
   /// First run of this version: build players from the old maths child profiles.
@@ -189,6 +191,7 @@ class PlayerStore {
     activeId = p.id;
     await save();
     await Mastery.load(p.id);
+    await Progress.load(p.id);
     return p;
   }
 
@@ -196,16 +199,19 @@ class PlayerStore {
     activeId = id;
     await save();
     await Mastery.load(id);
+    await Progress.load(id);
   }
 
   static Future<void> remove(String id) async {
     if (players.length <= 1) return;
     players.removeWhere((Player p) => p.id == id);
     await Mastery.deleteFor(id);
+    await Progress.deleteFor(id);
     await MathReview.reset(id);
     if (activeId == id) {
       activeId = players.first.id;
       await Mastery.load(activeId);
+      await Progress.load(activeId);
     }
     await save();
   }
@@ -280,6 +286,7 @@ class Mastery {
       st['w'] = _intOf(st['w'], 0) + 1;
     }
     _data[key] = st;
+    Progress.note(Progress.modeOfKey(key), clean);
     await _save();
   }
 

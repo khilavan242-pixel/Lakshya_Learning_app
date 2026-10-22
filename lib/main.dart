@@ -82,8 +82,10 @@ class _BootGateState extends State<BootGate> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('🎓', style: TextStyle(fontSize: 90 * s)),
+              ClipRRect(borderRadius: BorderRadius.circular(28 * s), child: Image.asset('assets/logo.png', width: 120 * s, height: 120 * s)),
+              SizedBox(height: 10 * s),
               Text(kAppName, style: kidText(46 * s)),
+              Text(kAppTagline, style: kidText(18 * s, w: FontWeight.w600)),
               SizedBox(height: 18 * s),
               SizedBox(width: 44 * s, height: 44 * s, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 5)),
               SizedBox(height: 14 * s),

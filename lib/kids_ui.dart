@@ -5,7 +5,8 @@ import 'app_store.dart';
 
 // ---------------------------------------------------------------- look
 /// The name of the app (shown on the start screen and the home page).
-const String kAppName = 'Little Genius Learn';
+const String kAppName = 'GyanTara';
+const String kAppTagline = 'Learn. Shine. Repeat.';
 
 /// 0 -> A, 1 -> B ... used for answer options.
 String optionLetter(int i) => String.fromCharCode(65 + i);
@@ -83,9 +84,28 @@ class _KidsBackgroundState extends State<KidsBackground> with SingleTickerProvid
         const DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF2E86F5), Color(0xFF7C4DFF), Color(0xFFFF5FA2)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF1B1550), Color(0xFF0E1026), Color(0xFF0B2B3C)],
+            ),
+          ),
+        ),
+        // soft glows (replace the old bright sky)
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(0.9, -1.0),
+              radius: 1.0,
+              colors: [Color(0x553B2FB0), Color(0x003B2FB0)],
+            ),
+          ),
+        ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(-1.0, 1.0),
+              radius: 0.9,
+              colors: [Color(0x4412607A), Color(0x0012607A)],
             ),
           ),
         ),
@@ -130,11 +150,6 @@ class _SceneryPainter extends CustomPainter {
     return out;
   }
 
-  static const List<Color> _picketColors = <Color>[
-    Color(0xFFEF9A9A), Color(0xFFFFF59D), Color(0xFF90CAF9), Color(0xFFA5D6A7),
-    Color(0xFFF48FB1), Color(0xFFFFCC80), Color(0xFF9FA8DA),
-  ];
-
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
@@ -146,44 +161,9 @@ class _SceneryPainter extends CustomPainter {
       final r = b.r * scale;
       final y = ((b.fy - t * b.speed) % 1.0) * (h + 2 * r) - r;
       final x = b.fx * w + math.sin(t * math.pi * 2 * b.sway + b.phase) * 24 * scale;
-      canvas.drawCircle(Offset(x, y), r, Paint()..color = b.color.withOpacity(0.22));
+      canvas.drawCircle(Offset(x, y), r, Paint()..color = b.color.withOpacity(0.10));
       canvas.drawCircle(Offset(x - r * 0.3, y - r * 0.3), r * 0.22,
-          Paint()..color = Colors.white.withOpacity(0.35));
-    }
-
-    final picketTop = h * 0.865;
-    final picketBottom = h * 0.955;
-    final pw = 34 * scale;
-    var x = 0.0;
-    var i = 0;
-    while (x < w) {
-      final rect = RRect.fromRectAndCorners(
-        Rect.fromLTRB(x + 2, picketTop, x + pw - 2, picketBottom),
-        topLeft: Radius.circular(pw / 2),
-        topRight: Radius.circular(pw / 2),
-      );
-      canvas.drawRRect(rect, Paint()..color = _picketColors[i % _picketColors.length]);
-      x += pw;
-      i++;
-    }
-    canvas.drawRect(Rect.fromLTWH(0, h * 0.905, w, 5 * scale), Paint()..color = const Color(0xFF8D6E63));
-
-    final y0 = h * 0.94;
-    final grass = Path()
-      ..moveTo(0, h)
-      ..lineTo(0, y0)
-      ..quadraticBezierTo(w * 0.15, y0 - h * 0.03, w * 0.30, y0)
-      ..quadraticBezierTo(w * 0.45, y0 + h * 0.03, w * 0.60, y0)
-      ..quadraticBezierTo(w * 0.80, y0 - h * 0.035, w, y0)
-      ..lineTo(w, h)
-      ..close();
-    canvas.drawPath(grass, Paint()..color = const Color(0xFF43A047));
-
-    const flowerX = <double>[0.06, 0.18, 0.33, 0.47, 0.62, 0.74, 0.88, 0.95];
-    const flowerColors = <Color>[Color(0xFFFFEB3B), Color(0xFFFF80AB), Color(0xFFFFFFFF), Color(0xFFFFAB40)];
-    for (var f = 0; f < flowerX.length; f++) {
-      canvas.drawCircle(Offset(w * flowerX[f], h * (0.965 + (f % 3) * 0.008)), 5 * scale,
-          Paint()..color = flowerColors[f % flowerColors.length]);
+          Paint()..color = Colors.white.withOpacity(0.18));
     }
   }
 

@@ -4,7 +4,7 @@ import 'package:path_provider/path_provider.dart';
 
 // ======================================================================
 // WHERE THE APP SAVES ITS DATA
-//   default : <Internal storage>/Documents/KidsSuperApp   (when the TV allows it), otherwise
+//   default : <Internal storage>/Documents/TubeBox/GyanTara   (when the TV allows it), otherwise
 //             the app's own Documents folder on internal storage (needs no permission)
 //   custom  : any folder on internal storage, SD card or USB drive
 //   private : the app's own hidden folder (needs no permission, used as a safe fallback)
@@ -23,7 +23,8 @@ class DriveInfo {
 class StorageLocation {
   StorageLocation._();
 
-  static const String appFolderName = 'KidsSuperApp';
+  static const String appFolderName = 'TubeBox/GyanTara'; // inside Documents, next to the TubeBox app's files
+  static const String legacyFolderName = 'KidsSuperApp'; // old name, data is copied from it once
   static const String sharedDocuments = '/storage/emulated/0/Documents';
 
   static String mode = 'documents'; // documents | custom | private
@@ -187,7 +188,29 @@ class StorageLocation {
     await _saveConfig();
     final d = Directory(target);
     if (!await d.exists()) await d.create(recursive: true);
+    await _adoptLegacy(target);
     _root = d;
+  }
+
+  /// Old versions saved in .../KidsSuperApp. The first time the new folder is empty,
+  /// everything is copied from the old folder (the old folder is left untouched).
+  static Future<void> _adoptLegacy(String target) async {
+    try {
+      if (await File('$target/data/app_kv.json').exists()) return;
+      final docs = await getApplicationDocumentsDirectory();
+      final olds = <String>[
+        '$sharedDocuments/$legacyFolderName',
+        '${docs.path}/$legacyFolderName',
+        if (mode == 'custom' && customBase.isNotEmpty) '$customBase/$legacyFolderName',
+      ];
+      for (final o in olds) {
+        if (o == target) continue;
+        if (await readState(o) == 'ok') {
+          await _migrate(o, target);
+          return;
+        }
+      }
+    } catch (_) {}
   }
 
   // ------------------------------------------------------------ copying data

@@ -8,6 +8,7 @@ import 'kids_ui.dart';
 import 'library.dart';
 import 'math_data.dart';
 import 'players.dart';
+import 'progress.dart';
 import 'speech_service.dart';
 
 // ======================================================================
@@ -556,6 +557,7 @@ class MathStore {
     t['a'] = ((t['a'] ?? 0) as num).toInt() + 1;
     if (correct) t['c'] = ((t['c'] ?? 0) as num).toInt() + 1;
     data[topicId] = t;
+    Progress.note('math', correct);
     await _saveProgress();
   }
 

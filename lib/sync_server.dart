@@ -375,7 +375,7 @@ class TVSyncServer {
       try {
         final body = json.decode(await request.readAsString());
         if (body is! Map || body['kls_backup'] == null || body['files'] is! List) {
-          return Response(400, body: json.encode({'error': 'This is not a Little Genius Learn backup file.'}), headers: _jsonHeaders);
+          return Response(400, body: json.encode({'error': 'This is not a GyanTara backup file.'}), headers: _jsonHeaders);
         }
         final root = await DocStore.root();
         var n = 0;
