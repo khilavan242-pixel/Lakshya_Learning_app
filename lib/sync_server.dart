@@ -46,7 +46,9 @@ class TVSyncServer {
   /// Called after ANY change made from the phone so the TV screen can refresh.
   final void Function() onChanged;
 
-  TVSyncServer({required this.onChanged});
+  final int port;
+
+  TVSyncServer({required this.onChanged, this.port = 8080});
 
   static const Map<String, String> _corsHeaders = {
     'access-control-allow-origin': '*',
@@ -264,7 +266,7 @@ class TVSyncServer {
 
     // ---- OFFLINE MAKER: the phone saves words/quizzes locally and sends them when connected ----
     router.get('/api/ping', (Request request) {
-      return Response.ok(json.encode({'ok': true}), headers: _jsonHeaders);
+      return Response.ok(json.encode({'ok': true, 'app': 'gyantara'}), headers: _jsonHeaders);
     });
 
     router.get('/offline', (Request request) {
@@ -470,7 +472,7 @@ class TVSyncServer {
 
     try {
       final handler = const Pipeline().addMiddleware(_cors).addHandler(router.call);
-      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, 8080);
+      _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
       return _server!.port;
     } catch (e) {
       return null;

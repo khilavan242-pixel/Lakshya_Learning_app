@@ -12,6 +12,7 @@ import 'quiz_game.dart';
 import 'speech_service.dart';
 import 'storage_location.dart';
 import 'storage_ui.dart';
+import 'tv_link.dart';
 import 'spelling_game.dart';
 
 /// The "super app" home: pick a game mode, change player, open Settings.
@@ -28,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    if (!_isPhoneApp()) TvLink.startReceiver(() {});
     DocStore.root().then((dir) {
       if (mounted) setState(() => _savePath = dir.path);
     });
@@ -37,6 +39,13 @@ class _HomeScreenState extends State<HomeScreen> {
         Speaker.instance.speak("Hello! Let's learn and play.", lang: 'en');
       });
     }
+  }
+
+  // On a TV (wide landscape screen) the app waits for content sent from the phone.
+  bool _isPhoneApp() {
+    final v = WidgetsBinding.instance.platformDispatcher.views.first;
+    final z = v.physicalSize / v.devicePixelRatio;
+    return z.width < 700 && z.height > z.width;
   }
 
   Future<void> _go(Widget screen) async {

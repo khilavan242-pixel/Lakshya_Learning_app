@@ -6,6 +6,7 @@ import 'kids_ui.dart';
 import 'learn_model.dart';
 import 'library.dart';
 import 'quiz_model.dart';
+import 'tv_link.dart';
 
 /// Add content in three easy steps: paste, check what the app found, save.
 /// The app detects Quiz / Words / Notes by itself (you can change it), puts the content in a
@@ -213,6 +214,52 @@ class _AddContentScreenState extends State<AddContentScreen> {
     if (mounted) setState(() => _busy = false);
   }
 
+  Future<void> _sendToTv() async {
+    final t = _text.text.trim();
+    if (t.isEmpty || _error.isNotEmpty || _rows.isEmpty) return;
+    setState(() {
+      _busy = true;
+      _done = 'Looking for your TV on this Wi-Fi...';
+    });
+    final ip = await TvLink.find();
+    if (ip == null) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _done = '';
+          _error = 'No TV found. Open GyanTara on the TV (home screen), connect the phone to the same Wi-Fi, then try again.';
+        });
+      }
+      return;
+    }
+    final cls = Library.classById(_classId)?.name ?? '';
+    final sub = Library.subjectById(_subjectId)?.name ?? '';
+    String? err;
+    if (_kind == 'quiz') {
+      err = await TvLink.post(ip, '/api/quiz/import', <String, dynamic>{'text': t, 'class': cls, 'subject': sub});
+    } else if (_kind == 'words') {
+      err = await TvLink.post(ip, '/api/upload-batch', <Map<String, dynamic>>[for (final w in _wordList(t)) <String, dynamic>{'word': w, 'topic': _topicName()}]);
+    } else {
+      final ch = _chapter.text.trim();
+      final title = _title.text.trim().isNotEmpty ? _title.text.trim() : ch;
+      err = await TvLink.post(ip, '/api/learn/import', <String, dynamic>{'text': t, 'title': title, 'class': cls, 'subject': sub});
+    }
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (err != null) {
+        _done = '';
+        _error = err;
+      } else {
+        _error = '';
+        _done = 'Sent to the TV (${_rows.length} ${_kind == 'quiz' ? 'questions' : (_kind == 'words' ? 'words' : 'cards')}). Open it on the TV.';
+        _text.clear();
+        _rows = <_Row>[];
+        _kindForced = false;
+      }
+    });
+  }
+
   // ------------------------------------------------------------------ UI
   Widget _card(double s, Widget child, {Color? border}) => Container(
         margin: EdgeInsets.only(bottom: 12 * s),
@@ -317,11 +364,23 @@ class _AddContentScreenState extends State<AddContentScreen> {
                 TextField(controller: _chapter, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Chapter (example: Ch 3: Subtraction)')),
               ]),
             ),
-            FilledButton.icon(
-              onPressed: _busy ? null : _save,
-              icon: const Icon(Icons.check_rounded),
-              label: Text(_busy ? 'Saving...' : 'Save to the library'),
-            ),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _save,
+                  icon: const Icon(Icons.phone_android_rounded),
+                  label: const Text('Save on phone'),
+                ),
+              ),
+              SizedBox(width: 10 * s),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _sendToTv,
+                  icon: const Icon(Icons.tv_rounded),
+                  label: Text(_busy ? 'Working...' : 'Send to TV'),
+                ),
+              ),
+            ]),
           ],
           if (_error.isNotEmpty) Padding(padding: EdgeInsets.only(top: 8 * s), child: Text(_error, style: kidText(16 * s, c: const Color(0xFFFF8A80), w: FontWeight.w700))),
           if (_done.isNotEmpty) Padding(padding: EdgeInsets.only(top: 8 * s), child: Text(_done, style: kidText(18 * s, c: const Color(0xFF7DF0DC)))),
