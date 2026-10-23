@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image_picker/image_picker.dart';
 import 'app_store.dart';
 import 'core_audio_models.dart';
 import 'kids_ui.dart';
@@ -136,6 +138,53 @@ class _AddContentScreenState extends State<AddContentScreen> {
   String _topicName() {
     final t = _title.text.trim();
     return (t.isEmpty ? 'MY WORDS' : t).toUpperCase();
+  }
+
+  bool _hindi = false;
+
+  /// Takes a photo (or picks one) of a book page and reads the text on it. The text lands in the
+  /// paste box so it can be corrected before it is saved.
+  Future<void> _scan(ImageSource src) async {
+    XFile? f;
+    try {
+      f = await ImagePicker().pickImage(source: src, imageQuality: 92);
+    } catch (e) {
+      setState(() => _error = 'Could not open the camera or gallery.');
+      return;
+    }
+    if (f == null) return;
+    setState(() {
+      _busy = true;
+      _error = '';
+      _done = 'Reading the page...';
+    });
+    final rec = TextRecognizer(script: _hindi ? TextRecognitionScript.devanagiri : TextRecognitionScript.latin);
+    try {
+      final r = await rec.processImage(InputImage.fromFilePath(f.path));
+      final lines = <String>[];
+      for (final b in r.blocks) {
+        for (final l in b.lines) {
+          final t = l.text.replaceFirst(RegExp(r'^[\u2022\u00B7*\-\s]+'), '').trim();
+          if (t.isNotEmpty) lines.add(t);
+        }
+      }
+      if (lines.isEmpty) {
+        _error = 'No text found. Try again with more light and the page flat.';
+        _done = '';
+      } else {
+        final old = _text.text.trim();
+        _text.text = old.isEmpty ? lines.join('\n') : '$old\n${lines.join('\n')}';
+        _kindForced = false;
+        _done = 'Read ${lines.length} lines. Check the text below and fix any mistakes.';
+        _check();
+      }
+    } catch (e) {
+      _error = _hindi ? 'Could not read Hindi text on this phone. Try English or type it.' : 'Could not read the page.';
+      _done = '';
+    } finally {
+      rec.close();
+    }
+    if (mounted) setState(() => _busy = false);
   }
 
   Future<void> _paste() async {
@@ -280,6 +329,25 @@ class _AddContentScreenState extends State<AddContentScreen> {
       body: ListView(
         padding: EdgeInsets.fromLTRB(12 * s, 4 * s, 12 * s, 24 * s),
         children: [
+          if (isPhone(context))
+            _card(
+              s,
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _label(s, 'Scan homework'),
+                Text('Take a photo of a book page. The app reads the words for you.', style: kidText(14 * s, w: FontWeight.w600)),
+                SizedBox(height: 8 * s),
+                Wrap(spacing: 8 * s, children: [
+                  ChoiceChip(label: const Text('English'), selected: !_hindi, onSelected: (_) => setState(() => _hindi = false)),
+                  ChoiceChip(label: const Text('\u0939\u093F\u0928\u094D\u0926\u0940'), selected: _hindi, onSelected: (_) => setState(() => _hindi = true)),
+                ]),
+                SizedBox(height: 8 * s),
+                Row(children: [
+                  Expanded(child: FilledButton.icon(onPressed: _busy ? null : () => _scan(ImageSource.camera), icon: const Icon(Icons.photo_camera_rounded), label: const Text('Camera'))),
+                  SizedBox(width: 10 * s),
+                  Expanded(child: OutlinedButton.icon(onPressed: _busy ? null : () => _scan(ImageSource.gallery), icon: const Icon(Icons.photo_library_rounded), label: const Text('Gallery'))),
+                ]),
+              ]),
+            ),
           _card(
             s,
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
