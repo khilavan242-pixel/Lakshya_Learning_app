@@ -34,6 +34,15 @@ jobs:
           else
             printf '\ndependencies {\n    implementation "com.google.mlkit:text-recognition-devanagari:16.0.1"\n}\n' >> build.gradle
           fi
+          # R8 shrinking fails on the unused Chinese/Japanese/Korean readers of ML Kit: turn it off and ignore them
+          printf -- '-dontwarn com.google.mlkit.vision.text.**\n' > proguard-rules.pro
+          if [ -f build.gradle.kts ]; then
+            printf '\nandroid {\n    buildTypes {\n        getByName("release") {\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")\n        }\n    }\n}\n' >> build.gradle.kts
+          else
+            printf '\nandroid {\n    buildTypes {\n        release {\n            minifyEnabled false\n            shrinkResources false\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"\n        }\n    }\n}\n' >> build.gradle
+          fi
+          echo "---- tail of gradle file ----"
+          tail -25 build.gradle.kts 2>/dev/null || tail -25 build.gradle
 
       - name: Build Split APKs
         run: |
