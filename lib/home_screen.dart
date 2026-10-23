@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'add_content.dart';
+import 'chapter_screen.dart';
+import 'continue_shelf.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'library.dart';
@@ -27,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static bool _greeted = false;
   String _savePath = '';
   Future<List<LibItem>> _newFuture = Library.newItems();
+  Future<List<ContinueItem>> _contFuture = loadContinue();
 
   @override
   void initState() {
@@ -88,7 +91,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _go(Widget screen) async {
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen));
     if (mounted) {
-      setState(() => _newFuture = Library.newItems());
+      setState(() {
+        _newFuture = Library.newItems();
+        _contFuture = loadContinue();
+      });
     }
   }
 
@@ -113,7 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SafeArea(
           child: Row(
             children: [
-              _rail(s),
+              _rail(s, modes),
               Expanded(
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(26 * s, 22 * s, 26 * s, 10 * s),
@@ -122,7 +128,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Row(children: [
                         Expanded(child: _GreetingRow(player: player, s: s)),
-                        SizedBox(width: 12 * s),
+                        SizedBox(width: 10 * s),
+                        TVFocusable(
+                          onPressed: () => _go(const AddContentScreen()),
+                          builder: (BuildContext context, bool focused) => Container(
+                            padding: EdgeInsets.all(8 * s),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFB84D),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 3),
+                            ),
+                            child: Icon(Icons.add_rounded, size: 24 * s, color: const Color(0xFF1A1300)),
+                          ),
+                        ),
+                        SizedBox(width: 10 * s),
                         TVFocusable(
                           onPressed: () => _go(const PlayersScreen()),
                           builder: (BuildContext context, bool focused) => Container(
@@ -140,21 +159,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       _MissionCard(s: s, grade: player.grade, onOpen: _go),
                       _newShelf(s),
                       SizedBox(height: 14 * s),
-                      Text('Learn and play', style: kidText(20 * s)),
+                      Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                        Text('Keep going', style: kidText(20 * s)),
+                        SizedBox(width: 10 * s),
+                        Text('Pick up where you stopped', style: kidText(13 * s, c: const Color(0xFFA9ADDB), w: FontWeight.w700)),
+                      ]),
                       SizedBox(height: 8 * s),
                       Expanded(
                         child: Align(
                           alignment: Alignment.topCenter,
-                          child: SizedBox(
-                            height: 150 * s,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                for (var i = 0; i < modes.length; i++)
-                                  Expanded(child: Padding(padding: EdgeInsets.only(right: i == modes.length - 1 ? 0 : 14 * s), child: _ModeCard(mode: modes[i], s: s, fill: true))),
-                              ],
-                            ),
-                          ),
+                          child: SizedBox(height: 138 * s, child: _keepGoing(s, modes, column: false)),
                         ),
                       ),
                     ],
@@ -168,8 +182,34 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// "Keep going": what the child practised last. A new child sees the first games instead.
+  Widget _keepGoing(double s, List<_Mode> modes, {required bool column}) => FutureBuilder<List<ContinueItem>>(
+        future: _contFuture,
+        builder: (BuildContext context, AsyncSnapshot<List<ContinueItem>> snap) {
+          final list = snap.data ?? <ContinueItem>[];
+          final List<Widget> cards = list.isEmpty
+              ? <Widget>[for (final m in modes.take(3)) _ModeCard(mode: m, s: s, fill: !column)]
+              : <Widget>[
+                  for (final c in list)
+                    _ContinueCard(
+                      c: c,
+                      s: s,
+                      fill: !column,
+                      onTap: () => _go(ChapterScreen(title: c.item.title, trail: c.item.chapter, items: <LibItem>[c.item])),
+                    ),
+                ];
+          if (column) {
+            return Column(children: [for (final w in cards) Padding(padding: EdgeInsets.only(bottom: 10 * s), child: w)]);
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [for (var i = 0; i < cards.length; i++) Expanded(child: Padding(padding: EdgeInsets.only(right: i == cards.length - 1 ? 0 : 14 * s), child: cards[i]))],
+          );
+        },
+      );
+
   /// Left navigation rail (TV): big, easy to reach with the remote.
-  Widget _rail(double s) {
+  Widget _rail(double s, List<_Mode> modes) {
     Widget item(IconData icon, String label, VoidCallback onTap, {bool active = false}) => Padding(
           padding: EdgeInsets.symmetric(vertical: 3 * s),
           child: TVFocusable(
@@ -177,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
             scale: 1.06,
             builder: (BuildContext context, bool focused) => Container(
               width: 74 * s,
-              padding: EdgeInsets.symmetric(vertical: 8 * s),
+              padding: EdgeInsets.symmetric(vertical: 6 * s),
               decoration: BoxDecoration(
                 color: active ? const Color(0xFF2B2F66) : (focused ? const Color(0x33FFFFFF) : Colors.transparent),
                 borderRadius: BorderRadius.circular(18 * s),
@@ -199,7 +239,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ClipRRect(borderRadius: BorderRadius.circular(10 * s), child: Image.asset('assets/logo.png', width: 40 * s, height: 40 * s)),
         SizedBox(height: 10 * s),
         item(Icons.home_rounded, 'Home', () {}, active: true),
-        item(Icons.add_circle_rounded, 'Add', () => _go(const AddContentScreen())),
+        item(Icons.menu_book_rounded, 'Learn', () => _go(const QuickLearnHome())),
+        item(Icons.sports_esports_rounded, 'Play', () => _go(PlayHubScreen(modes: modes))),
         item(Icons.folder_open_rounded, 'Library', () => _go(const LibraryManagerScreen())),
         const Spacer(),
         item(Icons.lock_rounded, 'Parents', () => _go(const ParentZoneScreen())),
@@ -270,6 +311,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   _MissionCard(s: s, grade: player.grade, onOpen: _go, compact: true),
                   _newShelf(s),
                   SizedBox(height: 14 * s),
+                  Text('Keep going', style: kidText(20 * s)),
+                  SizedBox(height: 10 * s),
+                  _keepGoing(s, modes, column: true),
+                  SizedBox(height: 6 * s),
                   Text('Learn and play', style: kidText(20 * s)),
                   SizedBox(height: 10 * s),
                   Wrap(spacing: gap, runSpacing: gap, children: [for (final m in modes) SizedBox(width: tileW, child: _ModeCard(mode: m, s: s))]),
@@ -578,4 +623,94 @@ class _OwlPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+
+/// "Play" page: all the games in big cards.
+class PlayHubScreen extends StatelessWidget {
+  final List<_Mode> modes;
+  const PlayHubScreen({super.key, required this.modes});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = uiScale(context);
+    return ScreenFrame(
+      title: '\u{1F3AE} Play',
+      body: LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
+        final cols = box.maxWidth >= 800 ? 3 : 2;
+        final gap = 14 * s;
+        final w = (box.maxWidth - gap * (cols - 1) - 4) / cols;
+        return SingleChildScrollView(
+          padding: EdgeInsets.only(bottom: 20 * s),
+          child: Wrap(spacing: gap, runSpacing: gap, children: [for (final m in modes) SizedBox(width: w, child: _ModeCard(mode: m, s: s))]),
+        );
+      }),
+    );
+  }
+}
+
+/// "Keep going" card from the design: coloured strip, title and a progress bar.
+class _ContinueCard extends StatelessWidget {
+  final ContinueItem c;
+  final double s;
+  final bool fill;
+  final VoidCallback onTap;
+  const _ContinueCard({required this.c, required this.s, required this.onTap, this.fill = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final kind = c.item.kind;
+    final colors = kind == 'quiz'
+        ? const <Color>[Color(0xFFF2709C), Color(0xFFFF9472)]
+        : (kind == 'learn' ? const <Color>[Color(0xFF1FB4D0), Color(0xFF4C7BF0)] : const <Color>[Color(0xFFFFB84D), Color(0xFFFF7B6B)]);
+    final label = kind == 'quiz' ? 'Quiz' : (kind == 'learn' ? 'Notes' : 'Spelling');
+    return TVFocusable(
+      scale: 1.05,
+      onPressed: onTap,
+      builder: (BuildContext context, bool focused) => AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        decoration: BoxDecoration(
+          color: const Color(0xFF181B3A),
+          borderRadius: BorderRadius.circular(22 * s),
+          border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 3),
+          boxShadow: focused ? [BoxShadow(color: colors.last.withOpacity(0.55), blurRadius: 26)] : null,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(19 * s),
+          child: Column(
+            mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 56 * s,
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(horizontal: 14 * s),
+                decoration: BoxDecoration(gradient: LinearGradient(colors: colors)),
+                child: Row(children: [
+                  Text(c.item.emoji, style: TextStyle(fontSize: 28 * s)),
+                  const Spacer(),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 10 * s, vertical: 3 * s),
+                    decoration: BoxDecoration(color: const Color(0x40000000), borderRadius: BorderRadius.circular(20 * s)),
+                    child: Text(label, style: kidText(12.5 * s)),
+                  ),
+                ]),
+              ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(14 * s, 8 * s, 14 * s, 12 * s),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(c.item.title, style: kidText(16 * s), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  SizedBox(height: 8 * s),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(value: c.progress, minHeight: 7 * s, color: const Color(0xFF35D0BA), backgroundColor: const Color(0xFF2A2E63)),
+                  ),
+                ]),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

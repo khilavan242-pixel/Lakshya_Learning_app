@@ -264,6 +264,12 @@ class Mastery {
 
   static bool isMastered(String key) => statusOf(key) == 'mastered';
 
+  /// When this item was last answered (milliseconds since 1970, 0 = never).
+  static int lastTime(String key) {
+    final raw = _data[key];
+    return raw is Map ? _intOf(raw['l'], 0) : 0;
+  }
+
   static int masteredIn<T>(List<T> items, String Function(T) keyOf) {
     var n = 0;
     for (final it in items) {

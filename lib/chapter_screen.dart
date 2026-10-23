@@ -35,9 +35,16 @@ class _ChapterScreenState extends State<ChapterScreen> {
 
   Future<void> _load() async {
     final cards = <LearnCard>[];
+    final docs = widget.items.any((LibItem i) => i.kind == 'learn' && i.payload is! LearnSet) ? await LearnStore.loadAll() : <LearnDoc>[];
     for (final it in widget.items) {
       final p = it.payload;
-      if (p is LearnSet && it.kind == 'learn') cards.addAll(p.cards);
+      if (p is LearnSet && it.kind == 'learn') {
+        cards.addAll(p.cards);
+      } else if (it.kind == 'learn') {
+        for (final d in docs) {
+          if (d.id == it.id) cards.addAll(d.cards);
+        }
+      }
     }
     final topics = widget.items.where((LibItem i) => i.kind == 'spell').map((LibItem i) => i.id).toSet();
     final ids = widget.items.where((LibItem i) => i.kind == 'quiz').map((LibItem i) => i.id).toSet();
