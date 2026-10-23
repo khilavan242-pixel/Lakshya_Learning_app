@@ -26,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   static bool _greeted = false;
   String _savePath = '';
+  Future<List<LibItem>> _newFuture = Library.newItems();
 
   @override
   void initState() {
@@ -42,6 +43,41 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Widget _newShelf(double s) => FutureBuilder<List<LibItem>>(
+        future: _newFuture,
+        builder: (BuildContext context, AsyncSnapshot<List<LibItem>> snap) {
+          final list = snap.data ?? <LibItem>[];
+          if (list.isEmpty) return const SizedBox.shrink();
+          return Padding(
+            padding: EdgeInsets.only(top: 8 * s),
+            child: TVFocusable(
+              onPressed: () => _go(const QuickLearnLibrary()),
+              builder: (BuildContext context, bool focused) => Container(
+                padding: EdgeInsets.symmetric(horizontal: 14 * s, vertical: 8 * s),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF181B3A),
+                  borderRadius: BorderRadius.circular(18 * s),
+                  border: Border.all(color: focused ? Colors.white : const Color(0xFF35D0BA), width: focused ? 3 : 2),
+                ),
+                child: Row(children: [
+                  Text('\u{1F195}', style: TextStyle(fontSize: 22 * s)),
+                  SizedBox(width: 8 * s),
+                  Expanded(
+                    child: Text(
+                      '${list.length} new this week: ${list.take(3).map((LibItem i) => i.title).join(', ')}${list.length > 3 ? '...' : ''}',
+                      style: kidText(15 * s, w: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: Colors.white, size: 24 * s),
+                ]),
+              ),
+            ),
+          );
+        },
+      );
+
   // On a TV (wide landscape screen) the app waits for content sent from the phone.
   bool _isPhoneApp() {
     final v = WidgetsBinding.instance.platformDispatcher.views.first;
@@ -51,7 +87,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _go(Widget screen) async {
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen));
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() => _newFuture = Library.newItems());
+    }
   }
 
   @override
@@ -183,6 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _GreetingRow(player: player, s: s),
                 SizedBox(height: 8 * s),
                 _MissionCard(s: s, grade: player.grade, onOpen: _go),
+                _newShelf(s),
                 if (StorageLocation.isFallback && StorageLocation.mode == 'documents' && !StorageLocation.hideWarning)
                   Padding(
                     padding: EdgeInsets.only(top: 6 * s),
@@ -266,6 +305,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _GreetingRow(player: player, s: s, compact: true),
                   SizedBox(height: 12 * s),
                   _MissionCard(s: s, grade: player.grade, onOpen: _go, compact: true),
+                  _newShelf(s),
                   SizedBox(height: 14 * s),
                   Wrap(spacing: gap, runSpacing: gap, children: [for (final b in tiles) SizedBox(width: tileW, height: tileH, child: b(tileW, tileH))]),
                   if (_savePath.isNotEmpty)

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'bin.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'players.dart';
 import 'progress.dart';
+import 'tv_link.dart';
 
 // ======================================================================
 // PARENT ZONE: progress report for every child, a daily play-time limit and a PIN.
@@ -147,6 +149,7 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
   final TextEditingController _c = TextEditingController();
   String _msg = '';
   int _limit = 0;
+  String _tvCode = '';
   final List<({Player p, int stars, int streak, Map<String, int> today, List<int> week})> _rep = [];
 
   @override
@@ -175,6 +178,7 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
       _rep.add((p: p, stars: r.stars, streak: r.streak, today: r.today, week: r.week));
     }
     await UsageGuard.reload();
+    _tvCode = await TvLink.tvCode();
     if (mounted) setState(() {});
   }
 
@@ -287,6 +291,23 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
                 for (final m in const <int>[0, 20, 30, 45, 60, 90])
                   ChoiceChip(label: Text(m == 0 ? 'No limit' : '$m min'), selected: _limit == m, onSelected: (_) => _setLimit(m)),
               ]),
+            ]),
+          ),
+          _card(
+            s,
+            Row(children: [
+              Expanded(child: Text('TV code for sending from the phone: $_tvCode\nType it on the phone the first time you press Send to TV.', style: kidText(15 * s, w: FontWeight.w600))),
+            ]),
+          ),
+          _card(
+            s,
+            Row(children: [
+              Expanded(child: Text('Recently deleted items can be restored for ${Bin.days} days.', style: kidText(15 * s, w: FontWeight.w600))),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const BinScreen())),
+                icon: const Icon(Icons.restore_from_trash_rounded),
+                label: const Text('Open'),
+              ),
             ]),
           ),
           for (final r in _rep)

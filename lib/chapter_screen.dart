@@ -79,6 +79,30 @@ class _ChapterScreenState extends State<ChapterScreen> {
     if (mounted) setState(() {});
   }
 
+  double get _overall {
+    final wDone = Mastery.masteredIn<WordCard>(_words, _wk);
+    final total = _words.length + _quizTotal;
+    return total == 0 ? 0 : (wDone + _quizDone) / total;
+  }
+
+  /// Test: a short round of this chapter's questions, mixed, no repeats of the same question.
+  Future<void> _playTest() async {
+    if (_overall < 0.8) {
+      showKidsSnack(context, 'Practise first. The Test opens at 80%.');
+      return;
+    }
+    List<QuizItem> build() {
+      final list = <QuizItem>[for (final set in _sets) for (final q in set.questions) QuizItem(set.id, q)]..shuffle();
+      return list.take(PlayerStore.active.rounds).toList();
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => QuizPlayScreen(title: '${widget.title} Test', emoji: '\u{1F3C6}', scoreId: 'test:${widget.title}', builder: build)),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _playQuiz() async {
     List<QuizItem> build() {
       var list = <QuizItem>[for (final set in _sets) for (final q in set.questions) QuizItem(set.id, q)];
@@ -97,7 +121,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
     if (mounted) setState(() {});
   }
 
-  Widget _step(double s, {required int n, required String title, required String text, required double progress, required String button, required Color color, required VoidCallback onTap, bool first = false}) {
+  Widget _step(double s, {required int n, required String title, required String text, required double progress, required String button, required Color color, required VoidCallback onTap, bool first = false, bool locked = false}) {
     final done = progress >= 1;
     return TVFocusable(
       autofocus: first,
@@ -117,7 +141,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(children: [
-              CircleAvatar(radius: 18 * s, backgroundColor: color, child: done ? const Icon(Icons.check_rounded, color: Colors.black87) : Text('$n', style: kidText(18 * s, c: Colors.black87))),
+              CircleAvatar(radius: 18 * s, backgroundColor: color, child: locked ? const Icon(Icons.lock_rounded, color: Colors.black87, size: 18) : done ? const Icon(Icons.check_rounded, color: Colors.black87) : Text('$n', style: kidText(18 * s, c: Colors.black87))),
               SizedBox(width: 10 * s),
               Text(title, style: kidText(26 * s)),
             ]),
@@ -162,6 +186,11 @@ class _ChapterScreenState extends State<ChapterScreen> {
       n++;
       final done = _quizDone;
       steps.add(_step(s, n: n, title: 'Quiz', text: '$_quizTotal questions. Tricky ones come back first.', progress: _quizTotal == 0 ? 0 : done / _quizTotal, button: done == 0 ? 'Start' : 'Continue', color: const Color(0xFFF2709C), onTap: _playQuiz, first: steps.isEmpty));
+    }
+    if (_sets.isNotEmpty) {
+      n++;
+      final open = _overall >= 0.8;
+      steps.add(_step(s, n: n, title: 'Test', text: open ? 'A mixed round of ${PlayerStore.active.rounds} questions.' : 'Opens when you reach 80% in Words and Quiz.', progress: _overall, button: open ? 'Start Test' : '80% needed', color: open ? const Color(0xFF35D0BA) : const Color(0xFF5A5FA6), onTap: _playTest, locked: !open));
     }
     final phone = isPhone(context);
     final body = steps.isEmpty

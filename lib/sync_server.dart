@@ -48,14 +48,28 @@ class TVSyncServer {
 
   final int port;
 
-  TVSyncServer({required this.onChanged, this.port = 8080});
+  /// When set, every /api call except /api/ping must send this code (header x-code). Used by the TV receiver.
+  final String? accessCode;
+
+  TVSyncServer({required this.onChanged, this.port = 8080, this.accessCode});
 
   static const Map<String, String> _corsHeaders = {
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type, x-code',
     'access-control-allow-private-network': 'true',
   };
+
+  Middleware get _codeCheck => createMiddleware(
+        requestHandler: (Request r) {
+          final code = accessCode;
+          if (code == null || r.method == 'OPTIONS') return null;
+          final p = r.url.path;
+          if (!p.startsWith('api/') || p == 'api/ping') return null;
+          if (r.headers['x-code'] == code) return null;
+          return Response(401, body: json.encode({'error': 'Wrong TV code.'}), headers: _jsonHeaders);
+        },
+      );
 
   Middleware get _cors => createMiddleware(
         requestHandler: (Request r) => r.method == 'OPTIONS' ? Response(204, headers: _corsHeaders) : null,
@@ -471,7 +485,7 @@ class TVSyncServer {
     });
 
     try {
-      final handler = const Pipeline().addMiddleware(_cors).addHandler(router.call);
+      final handler = const Pipeline().addMiddleware(_cors).addMiddleware(_codeCheck).addHandler(router.call);
       _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
       return _server!.port;
     } catch (e) {

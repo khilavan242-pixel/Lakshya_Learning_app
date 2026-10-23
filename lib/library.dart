@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'app_store.dart';
+import 'bin.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'players.dart';
@@ -321,7 +322,33 @@ class Library {
       out.add(LibItem(kind: 'spell', id: topic, title: topic, emoji: emojiForTopic(topic), subtitle: '✏️ $n words', count: n));
     });
     apply(out);
+    await _stampNew(out);
     return out;
+  }
+
+  /// Remembers when each item first showed up. The first time ever, everything counts as old.
+  static Future<void> _stampNew(List<LibItem> items) async {
+    final firstRun = !meta.containsKey('__init');
+    if (firstRun) meta['__init'] = <String, String>{'at': '1'};
+    final now = DateTime.now().millisecondsSinceEpoch.toString();
+    var changed = firstRun;
+    for (final it in items) {
+      final m = Map<String, String>.from(meta[it.key] ?? <String, String>{});
+      if (m.containsKey('at')) continue;
+      m['at'] = firstRun ? '0' : now;
+      meta[it.key] = m;
+      changed = true;
+    }
+    if (changed) await save();
+  }
+
+  /// Items added in the last [days] days (newest first).
+  static Future<List<LibItem>> newItems({int days = 7}) async {
+    final all = await allItems();
+    final limit = DateTime.now().subtract(Duration(days: days)).millisecondsSinceEpoch;
+    int at(LibItem i) => int.tryParse(meta[i.key]?['at'] ?? '') ?? 0;
+    final fresh = all.where((LibItem i) => at(i) > limit).toList()..sort((LibItem a, LibItem b) => at(b).compareTo(at(a)));
+    return fresh;
   }
 
   static String? _subjectIdNamed(String start) {
@@ -975,21 +1002,24 @@ class _LibraryManagerScreenState extends State<LibraryManagerScreen> {
       showKidsSnack(context, 'Tick the items you want to delete first.');
       return;
     }
-    final ok = await askConfirm(context, 'Delete ${sel.length} item(s)?\nThis removes the quizzes / all the words inside.');
+    final ok = await askConfirm(context, 'Delete ${sel.length} item(s)?\nThey wait 30 days in Parent Zone > Recently deleted.');
     if (!ok || !mounted) return;
     final cards = await CardStore.loadCards();
     for (final it in sel) {
       if (it.kind == 'quiz') {
+        await Bin.putQuiz(it.id);
         await QuizStore.delete(it.id);
         for (final p in PlayerStore.players) {
           final q = p.quizIds;
           if (q != null && q.contains(it.id)) p.quizIds = q.where((String x) => x != it.id).toList();
         }
       } else if (it.kind == 'learn') {
+        await Bin.putLearn(it.id);
         await LearnStore.delete(it.id);
       } else {
+        await Bin.putWords(it.id, cards.where((c) => c.topic == it.id).toList());
         for (final c in cards.where((c) => c.topic == it.id).toList()) {
-          await CardStore.deleteCard(c.id);
+          await CardStore.deleteCard(c.id, keepImage: true);
         }
         for (final p in PlayerStore.players) {
           final t = p.spellingTopics;

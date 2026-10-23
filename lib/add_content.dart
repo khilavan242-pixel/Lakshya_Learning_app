@@ -263,6 +263,25 @@ class _AddContentScreenState extends State<AddContentScreen> {
     if (mounted) setState(() => _busy = false);
   }
 
+  Future<String?> _askCode({required bool err}) {
+    final c = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('TV code'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('${err ? 'That code was not accepted. ' : ''}Type the 4 digit code shown on the TV: Parent (lock button) > TV code.'),
+          const SizedBox(height: 10),
+          TextField(controller: c, autofocus: true, keyboardType: TextInputType.number, maxLength: 4, decoration: const InputDecoration(border: OutlineInputBorder())),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
   Future<void> _sendToTv() async {
     final t = _text.text.trim();
     if (t.isEmpty || _error.isNotEmpty || _rows.isEmpty) return;
@@ -283,16 +302,32 @@ class _AddContentScreenState extends State<AddContentScreen> {
     }
     final cls = Library.classById(_classId)?.name ?? '';
     final sub = Library.subjectById(_subjectId)?.name ?? '';
-    String? err;
-    if (_kind == 'quiz') {
-      err = await TvLink.post(ip, '/api/quiz/import', <String, dynamic>{'text': t, 'class': cls, 'subject': sub});
-    } else if (_kind == 'words') {
-      err = await TvLink.post(ip, '/api/upload-batch', <Map<String, dynamic>>[for (final w in _wordList(t)) <String, dynamic>{'word': w, 'topic': _topicName()}]);
-    } else {
+    Future<String?> attempt(String code) {
+      if (_kind == 'quiz') return TvLink.post(ip, '/api/quiz/import', <String, dynamic>{'text': t, 'class': cls, 'subject': sub}, code: code);
+      if (_kind == 'words') {
+        return TvLink.post(ip, '/api/upload-batch', <Map<String, dynamic>>[for (final w in _wordList(t)) <String, dynamic>{'word': w, 'topic': _topicName()}], code: code);
+      }
       final ch = _chapter.text.trim();
       final title = _title.text.trim().isNotEmpty ? _title.text.trim() : ch;
-      err = await TvLink.post(ip, '/api/learn/import', <String, dynamic>{'text': t, 'title': title, 'class': cls, 'subject': sub});
+      return TvLink.post(ip, '/api/learn/import', <String, dynamic>{'text': t, 'title': title, 'class': cls, 'subject': sub}, code: code);
     }
+
+    var code = await TvLink.savedCode();
+    var err = await attempt(code);
+    if (err == 'code' && mounted) {
+      final entered = await _askCode(err: code.isNotEmpty);
+      if (entered == null) {
+        if (mounted) setState(() {
+          _busy = false;
+          _done = '';
+        });
+        return;
+      }
+      code = entered;
+      err = await attempt(code);
+      if (err == null) await TvLink.saveCode(code);
+    }
+    if (err == 'code') err = 'Wrong TV code. On the TV open Parent (lock button) to see the 4 digit code.';
     if (!mounted) return;
     setState(() {
       _busy = false;

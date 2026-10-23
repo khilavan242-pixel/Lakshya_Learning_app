@@ -15,10 +15,21 @@ class TvLink {
   // ------------------------------------------------------------ TV side
   static TVSyncServer? _receiver;
 
+  /// The 4 digit code the phone must know. Made once, saved on the TV, shown in Parent Zone.
+  static Future<String> tvCode() async {
+    final kv = await AppKV.open();
+    var c = kv.getString('tv_code') ?? '';
+    if (c.length != 4) {
+      c = (1000 + DateTime.now().microsecondsSinceEpoch % 9000).toString();
+      await kv.setString('tv_code', c);
+    }
+    return c;
+  }
+
   /// Starts the receiver on the TV (safe to call many times).
   static Future<void> startReceiver(void Function() onChanged) async {
     if (_receiver != null) return;
-    final r = TVSyncServer(onChanged: onChanged, port: tvPort);
+    final r = TVSyncServer(onChanged: onChanged, port: tvPort, accessCode: await tvCode());
     _receiver = r;
     final p = await r.startServer();
     if (p == null) _receiver = null;
@@ -78,15 +89,21 @@ class TvLink {
   }
 
   /// POSTs JSON to the TV. Returns null when it worked, otherwise a short message.
-  static Future<String?> post(String ip, String path, Object body) async {
+  static Future<String> savedCode() async => (await AppKV.open()).getString('phone_tv_code') ?? '';
+  static Future<void> saveCode(String c) async => (await AppKV.open()).setString('phone_tv_code', c);
+
+  /// Returns 'code' when the TV refused the code.
+  static Future<String?> post(String ip, String path, Object body, {String code = ''}) async {
     final c = HttpClient()..connectionTimeout = const Duration(seconds: 4);
     try {
       final req = await c.postUrl(Uri.parse('http://$ip:$tvPort$path'));
       req.headers.contentType = ContentType.json;
+      req.headers.set('x-code', code);
       req.add(utf8.encode(json.encode(body)));
       final res = await req.close().timeout(const Duration(seconds: 20));
       final text = await res.transform(utf8.decoder).join();
       if (res.statusCode == 200) return null;
+      if (res.statusCode == 401) return 'code';
       try {
         final d = json.decode(text);
         if (d is Map && d['error'] != null) return d['error'].toString();

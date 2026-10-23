@@ -98,10 +98,10 @@ class CardStore {
     await saveCards(cards);
   }
 
-  static Future<void> deleteCard(String id) async {
+  static Future<void> deleteCard(String id, {bool keepImage = false}) async {
     final cards = await loadCards();
     for (final c in cards.where((c) => c.id == id)) {
-      if (c.imagePath != null) _deleteFile(c.imagePath!);
+      if (c.imagePath != null && !keepImage) _deleteFile(c.imagePath!);
     }
     cards.removeWhere((c) => c.id == id);
     await saveCards(cards);
