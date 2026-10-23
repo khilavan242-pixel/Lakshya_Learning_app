@@ -26,6 +26,15 @@ jobs:
           cp -r android/app/src/main/res/. full_app/android/app/src/main/res/
           cp android/app/src/main/AndroidManifest.xml full_app/android/app/src/main/
 
+      - name: Add Hindi (Devanagari) text reading for Scan homework
+        run: |
+          cd full_app/android/app
+          if [ -f build.gradle.kts ]; then
+            printf '\ndependencies {\n    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")\n}\n' >> build.gradle.kts
+          else
+            printf '\ndependencies {\n    implementation "com.google.mlkit:text-recognition-devanagari:16.0.1"\n}\n' >> build.gradle
+          fi
+
       - name: Build Split APKs
         run: |
           cd full_app
