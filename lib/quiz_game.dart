@@ -6,6 +6,7 @@ import 'core_audio_models.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'library.dart';
+import 'mistakes.dart';
 import 'phone_manager.dart';
 import 'players.dart';
 import 'quick_learn.dart';
@@ -95,6 +96,7 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
   /// The quiz sets this player may use, as library items (Class > Subject > Quiz).
   Future<List<LibItem>> _loadItems() async {
     await QuizPrefs.load();
+    await Mistakes.load();
     final all = await QuizStore.loadAll();
     await Library.syncQuizzes(all);
     final allowed = PlayerStore.active.quizIds;
@@ -133,6 +135,19 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
       if (p is QuizSet) sets.add(p);
     }
     return <LibExtra>[
+      LibExtra(
+        emoji: '\u{1F4DD}',
+        title: 'Mistakes notebook',
+        subtitle: Mistakes.count == 0 ? 'No mistakes yet' : '${Mistakes.count} to try again',
+        colors: const <Color>[Color(0xFFFF7043), Color(0xFFFFB74D)],
+        onPressed: () {
+          if (Mistakes.count == 0) {
+            showKidsSnack(context, 'No mistakes to practise. Well done!');
+            return;
+          }
+          _play('Mistakes notebook', '\u{1F4DD}', 'mistakes', () => <QuizItem>[for (final m in Mistakes.items) QuizItem(m.setId, m.q)]);
+        },
+      ),
       if (sets.isNotEmpty)
         LibExtra(
           emoji: '📖',
@@ -365,9 +380,11 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final item = _items[_i];
     if (clean) {
       if (!item.repeat) _correct++;
+      Mistakes.remove(item.q);
       return;
     }
     _needPractice++;
+    Mistakes.add(item.quizId, item.q);
     _requeue(item, 4);
   }
 
@@ -697,7 +714,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                     fit: BoxFit.scaleDown,
                     child: SizedBox(
                       width: leftW,
-                      child: Text(q.question, textAlign: TextAlign.center, style: kidText(q.question.length > 60 ? 24 * s : 30 * s)),
+                      child: Text(q.shown, textAlign: TextAlign.center, style: kidText(q.shown.length > 60 ? 24 * s : 30 * s)),
                     ),
                   ),
                 ),

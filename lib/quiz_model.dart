@@ -17,6 +17,7 @@ class QuizQuestion {
   final String explanation;
   final String hint;
   final String lang; // '', 'en' or 'hi'  ('' = detect from the text)
+  final String passage; // case / source based: the text to read before the question
 
   const QuizQuestion({
     required this.type,
@@ -28,7 +29,25 @@ class QuizQuestion {
     this.explanation = '',
     this.hint = '',
     this.lang = '',
+    this.passage = '',
   });
+
+  /// The same question with a passage attached (case / source based questions).
+  QuizQuestion withPassage(String p) => QuizQuestion(
+        type: type,
+        question: question,
+        options: options,
+        correctIndex: correctIndex,
+        answers: answers,
+        pairs: pairs,
+        explanation: explanation,
+        hint: hint,
+        lang: lang,
+        passage: p,
+      );
+
+  /// Text shown on screen: the passage (if any) and then the question.
+  String get shown => passage.isEmpty ? question : '$passage\n\n$question';
 
   bool get isChoice => type == 'mcq' || (type == 'fill' && options.length >= 2);
   bool get isTyped => (type == 'short' || type == 'fill') && options.length < 2;
@@ -44,6 +63,7 @@ class QuizQuestion {
       'explanation': explanation,
       'hint': hint,
       'lang': lang,
+      'passage': passage,
     };
   }
 
@@ -66,6 +86,7 @@ class QuizQuestion {
       explanation: (m['explanation'] ?? '').toString(),
       hint: (m['hint'] ?? '').toString(),
       lang: (m['lang'] ?? '').toString(),
+      passage: (m['passage'] ?? '').toString(),
     );
   }
 }
@@ -148,7 +169,9 @@ class QuizParser {
     if (t.isEmpty) return '';
     const mcq = <String>{
       'mcq', 'multiple_choice', 'multiplechoice', 'choice', 'choices', 'options', 'option',
-      '4_options', 'four_options', 'single_choice', 'quiz', 'select'
+      '4_options', 'four_options', 'single_choice', 'quiz', 'select',
+      'assertion', 'assertion_reason', 'assertion_and_reason', 'assertion_reasoning', 'case', 'case_based',
+      'case_study', 'source', 'source_based', 'passage', 'comprehension'
     };
     const shortT = <String>{
       'short', 'short_answer', 'shortanswer', 'one_word', 'oneword', 'word', 'text', 'input',
@@ -266,7 +289,31 @@ class QuizParser {
     );
   }
 
-  static QuizQuestion _buildQuestion(Map<String, dynamic> m, String setLang) {
+  static const List<String> _assertOptions = <String>[
+    'Both A and R are true and R is the correct explanation of A.',
+    'Both A and R are true but R is not the correct explanation of A.',
+    'A is true but R is false.',
+    'A is false but R is true.',
+  ];
+
+  /// Handles passage (case / source based) and assertion-reason questions, then builds the question.
+  static QuizQuestion _buildQuestion(Map<String, dynamic> input, String setLang) {
+    final m = Map<String, dynamic>.from(input);
+    final passage = _str(_first(m, ['passage', 'case', 'source', 'context', 'paragraph', 'story', 'text_passage']));
+    final a = _str(_first(m, ['assertion', 'statement_a']));
+    final r = _str(_first(m, ['reason', 'statement_r']));
+    if (a.isNotEmpty && r.isNotEmpty) {
+      final lead = _str(_first(m, ['question', 'q', 'prompt']));
+      m['question'] = '${lead.isEmpty ? '' : '$lead\n'}Assertion (A): $a\nReason (R): $r';
+      m.remove('reason');
+      final o = m['options'];
+      if (o is! List || o.length < 2) m['options'] = _assertOptions;
+    }
+    final q = _buildCore(m, setLang);
+    return passage.isEmpty ? q : q.withPassage(passage);
+  }
+
+  static QuizQuestion _buildCore(Map<String, dynamic> m, String setLang) {
     final q = _str(_first(m, ['question', 'q', 'text', 'prompt', 'title', 'प्रश्न']));
     final qLang = _normLang(_str(_first(m, ['lang', 'language'])));
     final explanation = _str(_first(m, ['explanation', 'why', 'reason', 'note']));
