@@ -46,6 +46,7 @@ class LibItem {
   final Object? payload;
   String classId = '';
   String subjectId = '';
+  String chapter = ''; // 'Ch 3: Subtraction' or '' (no chapter)
 
   LibItem({
     required this.kind,
@@ -217,12 +218,13 @@ class Library {
 
   // ------------------------------------------------------------- items
   /// null = keep as it is, '' = clear.
-  static Future<void> setMeta(String key, {String? c, String? s, String? t, String? e}) async {
+  static Future<void> setMeta(String key, {String? c, String? s, String? t, String? e, String? ch}) async {
     final m = Map<String, String>.from(meta[key] ?? <String, String>{});
     if (c != null) m['c'] = c;
     if (s != null) m['s'] = s;
     if (t != null) m['t'] = t;
     if (e != null) m['e'] = e;
+    if (ch != null) m['ch'] = ch;
     meta[key] = m;
     await save();
   }
@@ -232,8 +234,24 @@ class Library {
     await save();
   }
 
+  /// "Chapter 3: Subtraction", "Ch 3 - Time", "Ch.3 Shapes" at the start of a title -> "Ch 3: Subtraction".
+  static String chapterOf(String title) {
+    final m = RegExp(r'^\s*(?:chapter|ch)\.?\s*(\d+)\s*[:\-\u2013\u2014.]?\s*(.*)$', caseSensitive: false).firstMatch(title);
+    if (m == null) return '';
+    final rest = (m.group(2) ?? '').trim();
+    return rest.isEmpty ? 'Ch ${m.group(1)}' : 'Ch ${m.group(1)}: $rest';
+  }
+
+  /// Sorts chapter names by their number (Ch 2 before Ch 10), then by name.
+  static int compareChapters(String a, String b) {
+    int num(String x) => int.tryParse(RegExp(r'^Ch (\d+)').firstMatch(x)?.group(1) ?? '') ?? 100000;
+    final d = num(a).compareTo(num(b));
+    return d != 0 ? d : a.toLowerCase().compareTo(b.toLowerCase());
+  }
+
   static void apply(List<LibItem> items) {
     for (final it in items) {
+      it.chapter = chapterOf(it.title);
       final m = meta[it.key];
       if (m == null) continue;
       final c = m['c'] ?? '';
@@ -244,6 +262,14 @@ class Library {
       if (t.isNotEmpty) it.title = t;
       final e = m['e'] ?? '';
       if (e.isNotEmpty) it.emoji = e;
+      final ch = m['ch'] ?? '';
+      if (ch == '-') {
+        it.chapter = ''; // parent says: no chapter
+      } else if (ch.isNotEmpty) {
+        it.chapter = ch;
+      } else {
+        it.chapter = chapterOf(it.title);
+      }
     }
   }
 
@@ -486,6 +512,8 @@ class LibraryBrowser extends StatefulWidget {
   final List<LibExtra> Function(List<LibItem> scope, String scopeName) extras;
   final List<Widget> Function(double s, Future<void> Function() reload) actions;
   final Listenable? refresh;
+  /// When set, tapping a chapter opens this (the Chapter page) instead of listing its items.
+  final Future<void> Function(String chapter, String trail, List<LibItem> items)? onOpenChapter;
 
   const LibraryBrowser({
     super.key,
@@ -497,6 +525,7 @@ class LibraryBrowser extends StatefulWidget {
     required this.extras,
     required this.actions,
     this.refresh,
+    this.onOpenChapter,
   });
 
   @override
@@ -509,6 +538,7 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
   bool _autoClassDone = false;
   String? _cls;
   String? _sub;
+  String? _ch; // chapter chosen inside a subject (null = chapter list)
   bool _noAutoCls = false;
   bool _noAutoSub = false;
 
@@ -597,9 +627,13 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
     return _Eff(cls, sub);
   }
 
-  bool _canGoUp() => _sub != null || _cls != null;
+  bool _canGoUp() => _ch != null || _sub != null || _cls != null;
 
   bool _up() {
+    if (_ch != null) {
+      setState(() => _ch = null);
+      return true;
+    }
     if (_sub != null) {
       setState(() {
         _sub = null;
@@ -654,6 +688,7 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
           setState(() {
             _cls = key;
             _sub = null;
+            _ch = null;
             _noAutoSub = false;
           });
         }));
@@ -688,7 +723,17 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
         final scope = _scopeSub(inClass, e.sub!);
         if (e.sub != kAll || _subjectKeys(inClass).length > 1) crumb = '$crumb  ›  ${_subLabel(e.sub!)}';
         final scopeName = e.sub == kAll ? _clsLabel(e.cls!) : '${_clsLabel(e.cls!)} › ${_subLabel(e.sub!)}';
-        for (final ex in widget.extras(scope, scopeName)) {
+        final chapters = scope.map((LibItem x) => x.chapter).where((String c) => c.isNotEmpty).toSet().toList()..sort(Library.compareChapters);
+        final inChapterList = chapters.isNotEmpty && _ch == null;
+        var shownScope = scope;
+        var shownName = scopeName;
+        if (chapters.isNotEmpty && _ch != null) {
+          shownScope = scope.where((LibItem x) => _ch == kUnsorted ? x.chapter.isEmpty : x.chapter == _ch).toList();
+          final chLabel = _ch == kUnsorted ? 'Other' : _ch!;
+          crumb = '$crumb  \u203A  $chLabel';
+          shownName = '$scopeName \u203A $chLabel';
+        }
+        for (final ex in widget.extras(shownScope, shownName)) {
           final first = tiles.isEmpty;
           tiles.add((double w, double h) => BigTile(
                 emoji: ex.emoji,
@@ -705,24 +750,41 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
                 },
               ));
         }
-        for (var i = 0; i < scope.length; i++) {
-          final it = scope[i];
-          final first = tiles.isEmpty;
-          final colors = kTopicGradients[i % kTopicGradients.length];
-          tiles.add((double w, double h) => BigTile(
-                emoji: it.emoji,
-                title: it.title,
-                subtitle: it.subtitle,
-                colors: colors,
-                s: s,
-                width: w / s,
-                height: h / s,
-                autofocus: first,
-                onPressed: () async {
-                  await widget.onOpen(it);
-                  if (mounted) _reload();
-                },
-              ));
+        if (inChapterList) {
+          for (final ch in chapters) {
+            final n = scope.where((LibItem x) => x.chapter == ch).length;
+            tiles.add(folder('\u{1F4D8}', ch, countText(n), () async {
+              final open = widget.onOpenChapter;
+              if (open == null) {
+                setState(() => _ch = ch);
+                return;
+              }
+              await open(ch, scopeName, scope.where((LibItem x) => x.chapter == ch).toList());
+              if (mounted) _reload();
+            }));
+          }
+          final others = scope.where((LibItem x) => x.chapter.isEmpty).length;
+          if (others > 0) tiles.add(folder('\u{1F4E5}', 'Other', countText(others), () => setState(() => _ch = kUnsorted)));
+        } else {
+          for (var i = 0; i < shownScope.length; i++) {
+            final it = shownScope[i];
+            final first = tiles.isEmpty;
+            final colors = kTopicGradients[i % kTopicGradients.length];
+            tiles.add((double w, double h) => BigTile(
+                  emoji: it.emoji,
+                  title: it.title,
+                  subtitle: it.subtitle,
+                  colors: colors,
+                  s: s,
+                  width: w / s,
+                  height: h / s,
+                  autofocus: first,
+                  onPressed: () async {
+                    await widget.onOpen(it);
+                    if (mounted) _reload();
+                  },
+                ));
+          }
         }
       }
     }
@@ -821,6 +883,23 @@ class _LibraryManagerScreenState extends State<LibraryManagerScreen> {
     _sel.clear();
     await _reload();
     if (mounted) showKidsSnack(context, 'Moved ${sel.length} item(s).');
+  }
+
+  Future<void> _chapter() async {
+    final sel = _selected;
+    if (sel.isEmpty) {
+      showKidsSnack(context, 'Tick the items you want to put in a chapter first.');
+      return;
+    }
+    final name = await askText(context, 'Chapter name', 'e.g. Ch 3: Subtraction   (type - for no chapter)', initial: sel.first.chapter);
+    if (name == null || !mounted) return;
+    final v = name.trim();
+    for (final it in sel) {
+      await Library.setMeta(it.key, ch: v.isEmpty ? '' : v);
+    }
+    _sel.clear();
+    await _reload();
+    if (mounted) showKidsSnack(context, 'Chapter saved for ${sel.length} item(s).');
   }
 
   Future<void> _rename() async {
@@ -1002,6 +1081,7 @@ class _LibraryManagerScreenState extends State<LibraryManagerScreen> {
               ActionButton(s: s, icon: Icons.select_all_rounded, label: 'All', color: const Color(0xFF5C6BC0), onPressed: () => setState(() => _sel.addAll(shown.map((LibItem i) => i.key)))),
               ActionButton(s: s, icon: Icons.deselect_rounded, label: 'None', color: const Color(0xFF64748B), onPressed: () => setState(_sel.clear)),
               ActionButton(s: s, icon: Icons.drive_file_move_rounded, label: 'Move', color: const Color(0xFF22C55E), onPressed: _move),
+              ActionButton(s: s, icon: Icons.menu_book_rounded, label: 'Chapter', color: const Color(0xFF14B8A6), onPressed: _chapter),
               ActionButton(s: s, icon: Icons.edit_rounded, label: 'Rename', color: const Color(0xFF0EA5E9), onPressed: _rename),
               ActionButton(s: s, icon: Icons.emoji_emotions_rounded, label: 'Picture', color: const Color(0xFFF59E0B), onPressed: _emoji),
               ActionButton(s: s, icon: Icons.delete_rounded, label: 'Delete', color: const Color(0xFFEF4444), onPressed: _delete),

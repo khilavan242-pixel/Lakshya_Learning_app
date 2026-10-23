@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_store.dart';
+import 'chapter_screen.dart';
 import 'kids_ui.dart';
 import 'learn_facts.dart';
 import 'learn_model.dart';
@@ -305,6 +306,8 @@ class QuickLearnLibrary extends StatelessWidget {
         }
       },
       extras: (List<LibItem> scope, String name) => _extras(context, scope, name),
+      onOpenChapter: (String chapter, String trail, List<LibItem> items) =>
+          Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ChapterScreen(title: chapter, trail: trail, items: items))),
       actions: (double s, Future<void> Function() reload) => <Widget>[],
     );
   }
