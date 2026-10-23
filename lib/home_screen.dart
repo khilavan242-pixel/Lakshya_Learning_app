@@ -4,6 +4,7 @@ import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'library.dart';
 import 'math_game.dart';
+import 'parent_zone.dart';
 import 'phone_manager.dart';
 import 'players.dart';
 import 'progress.dart';
@@ -157,6 +158,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     SizedBox(width: 10 * s),
                     ActionButton(
                       s: s,
+                      icon: Icons.lock_rounded,
+                      color: const Color(0xFF5C6BC0),
+                      onPressed: () => _go(const ParentZoneScreen()),
+                    ),
+                    SizedBox(width: 10 * s),
+                    ActionButton(
+                      s: s,
                       icon: Icons.settings_rounded,
                       label: 'Settings',
                       color: const Color(0xFF78909C),
@@ -247,6 +255,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     chipBtn(Icons.add_circle_rounded, 'Add', const Color(0xFFF59E0B), () => _go(const AddContentScreen())),
                     SizedBox(width: 8 * s),
                     chipBtn(Icons.folder_open_rounded, 'Organize', const Color(0xFF8E24AA), () => _go(const LibraryManagerScreen())),
+                    SizedBox(width: 8 * s),
+                    chipBtn(Icons.lock_rounded, 'Parent', const Color(0xFF5C6BC0), () => _go(const ParentZoneScreen())),
                     SizedBox(width: 8 * s),
                     chipBtn(Icons.settings_rounded, 'Settings', const Color(0xFF607D8B), () => _go(const PlayerSettingsScreen(home: true))),
                     SizedBox(width: 8 * s),

@@ -5,6 +5,7 @@ import 'home_screen.dart';
 import 'kids_ui.dart';
 import 'math_game.dart';
 import 'players.dart';
+import 'parent_zone.dart';
 import 'storage_location.dart';
 import 'who_screen.dart';
 
@@ -28,6 +29,10 @@ class KidsSuperApp extends StatelessWidget {
         colorSchemeSeed: Colors.deepPurple,
         scaffoldBackgroundColor: Colors.transparent,
       ),
+      builder: (BuildContext context, Widget? child) => Stack(children: [
+        child ?? const SizedBox.shrink(),
+        ValueListenableBuilder<bool>(valueListenable: UsageGuard.locked, builder: (BuildContext c, bool on, Widget? _) => on ? const Positioned.fill(child: TimeUpOverlay()) : const SizedBox.shrink()),
+      ]),
       home: const BootGate(),
     );
   }
@@ -71,6 +76,7 @@ class _BootGateState extends State<BootGate> {
     } catch (e) {
       _say('Almost ready...');
     }
+    UsageGuard.start();
     if (mounted) setState(() => _ready = true);
   }
 

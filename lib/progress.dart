@@ -95,6 +95,43 @@ class Progress {
     return <int>[for (var i = 6; i >= 0; i--) _total(now.subtract(Duration(days: i)))];
   }
 
+  /// Report for any child (not only the active one): stars, streak, today per mode and the last 7 days.
+  static Future<({int stars, int streak, Map<String, int> today, List<int> week})> summary(String id) async {
+    if (id == _pid) {
+      return (stars: _stars, streak: streak, today: <String, int>{for (final m in const <String>['spell', 'math', 'quiz', 'learn']) m: today(m)}, week: lastWeek);
+    }
+    var stars = 0;
+    final days = <String, Map<String, int>>{};
+    try {
+      final raw = await DocStore.readJson('players', 'progress_$id.json');
+      if (raw is Map) {
+        final s = raw['stars'];
+        if (s is num) stars = s.toInt();
+        final d = raw['days'];
+        if (d is Map) {
+          d.forEach((dynamic k, dynamic v) {
+            if (v is Map) days['$k'] = <String, int>{for (final e in v.entries) '${e.key}': (e.value is num) ? (e.value as num).toInt() : 0};
+          });
+        }
+      }
+    } catch (_) {}
+    int total(DateTime d) => (days[_dayKey(d)]?.values ?? const <int>[]).fold<int>(0, (int a, int b) => a + b);
+    var d = DateTime.now();
+    if (total(d) < dayGoal) d = d.subtract(const Duration(days: 1));
+    var n = 0;
+    while (total(d) >= dayGoal) {
+      n++;
+      d = d.subtract(const Duration(days: 1));
+    }
+    final now = DateTime.now();
+    return (
+      stars: stars,
+      streak: n,
+      today: <String, int>{for (final m in const <String>['spell', 'math', 'quiz', 'learn']) m: days[_dayKey(now)]?[m] ?? 0},
+      week: <int>[for (var i = 6; i >= 0; i--) total(now.subtract(Duration(days: i)))],
+    );
+  }
+
   static String modeOfKey(String key) {
     if (key.startsWith('spell:')) return 'spell';
     if (key.startsWith('quiz:')) return 'quiz';
