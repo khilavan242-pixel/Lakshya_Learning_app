@@ -52,14 +52,14 @@ class _HomeScreenState extends State<HomeScreen> {
           final list = snap.data ?? <LibItem>[];
           if (list.isEmpty) return const SizedBox.shrink();
           return Padding(
-            padding: EdgeInsets.only(top: 8 * s),
+            padding: EdgeInsets.only(top: 6 * s),
             child: TVFocusable(
               onPressed: () => _go(const QuickLearnLibrary()),
               builder: (BuildContext context, bool focused) => Container(
-                padding: EdgeInsets.symmetric(horizontal: 14 * s, vertical: 8 * s),
+                padding: EdgeInsets.symmetric(horizontal: 12 * s, vertical: 4 * s),
                 decoration: BoxDecoration(
                   color: const Color(0xFF181B3A),
-                  borderRadius: BorderRadius.circular(18 * s),
+                  borderRadius: BorderRadius.circular(16 * s),
                   border: Border.all(color: focused ? Colors.white : const Color(0xFF35D0BA), width: focused ? 3 : 2),
                 ),
                 child: Row(children: [
@@ -123,7 +123,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(26 * s, 22 * s, 26 * s, 10 * s),
-                  child: Column(
+                  child: SingleChildScrollView(
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
@@ -165,13 +166,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         Text('Pick up where you stopped', style: kidText(13 * s, c: const Color(0xFFA9ADDB), w: FontWeight.w700)),
                       ]),
                       SizedBox(height: 8 * s),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: SizedBox(height: 138 * s, child: _keepGoing(s, modes, column: false)),
-                        ),
-                      ),
+                      SizedBox(height: 118 * s, child: _keepGoing(s, modes, column: false)),
+                      SizedBox(height: 12 * s),
                     ],
+                  ),
                   ),
                 ),
               ),
@@ -464,7 +462,7 @@ class _MissionCard extends StatelessWidget {
           onPressed: () => onOpen(steps[next].screen()),
           builder: (BuildContext context, bool focused) => AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            padding: EdgeInsets.symmetric(horizontal: 26 * s, vertical: 14 * s),
+            padding: EdgeInsets.symmetric(horizontal: 20 * s, vertical: 8 * s),
             decoration: BoxDecoration(
               color: const Color(0xFFFFB84D),
               borderRadius: BorderRadius.circular(40 * s),
@@ -475,16 +473,16 @@ class _MissionCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.play_arrow_rounded, size: 34 * s, color: const Color(0xFF1A1300)),
+                Icon(Icons.play_arrow_rounded, size: 26 * s, color: const Color(0xFF1A1300)),
                 SizedBox(width: 6 * s),
-                Text(all ? 'Play more' : 'Start ${steps[next].label}', style: kidText(22 * s, c: const Color(0xFF1A1300))),
+                Text(all ? 'Play more' : 'Start ${steps[next].label}', style: kidText(18 * s, c: const Color(0xFF1A1300))),
               ],
             ),
           ),
         );
 
         return Container(
-          padding: EdgeInsets.fromLTRB(22 * s, 14 * s, 22 * s, 14 * s),
+          padding: EdgeInsets.fromLTRB(22 * s, 10 * s, 22 * s, 10 * s),
           decoration: BoxDecoration(
             gradient: const LinearGradient(colors: [Color(0xFF3A2F9E), Color(0xFF5B3FD1), Color(0xFF8B5CF6)]),
             borderRadius: BorderRadius.circular(26 * s),
@@ -550,12 +548,12 @@ class _ModeCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                height: 66 * s,
+                height: (fill ? 46 : 66) * s,
                 width: double.infinity,
                 padding: EdgeInsets.symmetric(horizontal: 14 * s),
                 alignment: Alignment.centerLeft,
                 decoration: BoxDecoration(gradient: LinearGradient(colors: mode.colors)),
-                child: Text(mode.emoji, style: TextStyle(fontSize: 34 * s)),
+                child: Text(mode.emoji, style: TextStyle(fontSize: (fill ? 26 : 34) * s)),
               ),
               Padding(
                 padding: EdgeInsets.fromLTRB(14 * s, 10 * s, 14 * s, 12 * s),
@@ -682,7 +680,7 @@ class _ContinueCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                height: 56 * s,
+                height: (fill ? 44 : 56) * s,
                 width: double.infinity,
                 padding: EdgeInsets.symmetric(horizontal: 14 * s),
                 decoration: BoxDecoration(gradient: LinearGradient(colors: colors)),

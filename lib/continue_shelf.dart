@@ -48,3 +48,13 @@ Future<List<ContinueItem>> loadContinue() async {
   out.sort((ContinueItem a, ContinueItem b) => b.last.compareTo(a.last));
   return out.take(3).toList();
 }
+
+/// Words the child has got wrong most often (for the Parent Zone "Needs a little practice" list).
+Future<List<String>> loadWeak() async {
+  final out = <String>[];
+  for (final c in await CardStore.loadCards()) {
+    if (Mastery.statusOf('spell:${c.word}') == 'weak') out.add('Spelling: ${c.word}');
+    if (out.length >= 4) break;
+  }
+  return out;
+}

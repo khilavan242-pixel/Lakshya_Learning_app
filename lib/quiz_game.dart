@@ -57,10 +57,6 @@ String _itemKey(QuizItem i) => i.key;
 
 List<QuizItem> _itemsForSet(QuizSet set) {
   var items = set.questions.map((QuizQuestion q) => QuizItem(set.id, q)).toList();
-  if (PlayerStore.active.smart) {
-    final remaining = Mastery.notMastered<QuizItem>(items, _itemKey);
-    if (remaining.isNotEmpty) items = remaining; // everything mastered -> revision round with all
-  }
   if (QuizPrefs.shuffle) items.shuffle();
   return items;
 }
@@ -107,10 +103,8 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
     final best = await QuizStore.bestScores();
     final items = <LibItem>[];
     for (final set in sets) {
-      final mastered = Mastery.masteredIn<QuizQuestion>(set.questions, (QuizQuestion q) => 'quiz:${set.id}:${q.question}');
       final b = best[set.id];
       final extra = <String>[];
-      if (mastered > 0) extra.add('✅ $mastered');
       if (b != null) extra.add('best $b%');
       items.add(LibItem(
         kind: 'quiz',
@@ -138,20 +132,7 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
       final p = it.payload;
       if (p is QuizSet) sets.add(p);
     }
-    var pending = 0;
-    for (final set in sets) {
-      for (final q in set.questions) {
-        if (!Mastery.isMastered('quiz:${set.id}:${q.question}')) pending++;
-      }
-    }
     return <LibExtra>[
-      LibExtra(
-        emoji: '🏆',
-        title: 'Master Play',
-        subtitle: pending == 0 ? 'All mastered 🎉' : '$pending to master',
-        colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
-        onPressed: () => _play('Master Play', '🏆', 'master', () => _masterItems(sets), master: true),
-      ),
       if (sets.isNotEmpty)
         LibExtra(
           emoji: '📖',
@@ -382,10 +363,8 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   /// Not clean -> it comes back a few questions later (and in later rounds) until learned.
   void _finishQuestion({required bool clean}) {
     final item = _items[_i];
-    Mastery.record(item.key, clean: clean);
     if (clean) {
       if (!item.repeat) _correct++;
-      if (widget.master && !Mastery.isMastered(item.key)) _requeue(item, 6);
       return;
     }
     _needPractice++;

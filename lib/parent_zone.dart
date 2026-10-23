@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'add_content.dart';
 import 'bin.dart';
+import 'continue_shelf.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
 import 'pin_pad.dart';
@@ -31,6 +33,10 @@ class ParentPrefs {
   static Future<void> setLimitMin(int m) async => (await AppKV.open()).setString('parent_limit', '$m');
 
   static Future<int> usedSec() async => int.tryParse((await AppKV.open()).getString('used_${_day()}') ?? '') ?? 0;
+  static Future<int> usedSecOn(DateTime d) async {
+    String two(int n) => n < 10 ? '0$n' : '$n';
+    return int.tryParse((await AppKV.open()).getString('used_${d.year}-${two(d.month)}-${two(d.day)}') ?? '') ?? 0;
+  }
   static Future<void> setUsedSec(int s) async => (await AppKV.open()).setString('used_${_day()}', '$s');
 
   /// Extra minutes a parent granted today.
@@ -143,6 +149,9 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
   String _msg = '';
   int _limit = 0;
   String _tvCode = '';
+  int _sel = 0;
+  int _weekMin = 0;
+  List<String> _weak = <String>[];
   final List<({Player p, int stars, int streak, Map<String, int> today, List<int> week})> _rep = [];
 
   @override
@@ -164,6 +173,12 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
       final r = await Progress.summary(p.id);
       _rep.add((p: p, stars: r.stars, streak: r.streak, today: r.today, week: r.week));
     }
+    var wm = 0;
+    for (var i = 0; i < 7; i++) {
+      wm += await ParentPrefs.usedSecOn(DateTime.now().subtract(Duration(days: i)));
+    }
+    _weekMin = wm ~/ 60;
+    _weak = await loadWeak();
     await UsageGuard.reload();
     _tvCode = await TvLink.tvCode();
     if (mounted) setState(() {});
@@ -227,6 +242,84 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
         child: child,
       );
 
+  List<Widget> _reportCards(double s, Map<String, String> modes) {
+    if (_sel >= _rep.length) _sel = 0;
+    final r = _rep[_sel];
+    final mx = r.week.fold<int>(1, (int a, int b) => b > a ? b : a);
+    const letters = <String>['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    Widget stat(String big, String small) => Expanded(
+          child: Column(children: [
+            Text(big, style: kidText(26 * s)),
+            Text(small, style: kidText(12 * s, c: const Color(0xFFA9ADDB))),
+          ]),
+        );
+    return [
+      if (_rep.length > 1)
+        Padding(
+          padding: EdgeInsets.only(bottom: 10 * s),
+          child: Wrap(spacing: 8 * s, children: [
+            for (var i = 0; i < _rep.length; i++)
+              ChoiceChip(label: Text('${_rep[i].p.emoji} ${_rep[i].p.name}'), selected: i == _sel, onSelected: (_) => setState(() => _sel = i)),
+          ]),
+        ),
+      _card(
+        s,
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${r.p.name}, this week', style: kidText(20 * s)),
+          SizedBox(height: 10 * s),
+          Row(children: [
+            stat('$_weekMin', 'min learning'),
+            stat('${r.stars}', 'stars earned'),
+            stat('${r.streak}', 'day streak'),
+          ]),
+          SizedBox(height: 12 * s),
+          SizedBox(
+            height: 70 * s,
+            child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              for (var i = 0; i < r.week.length && i < 7; i++)
+                Expanded(
+                  child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    Container(
+                      margin: EdgeInsets.symmetric(horizontal: 6 * s),
+                      height: (r.week[i] / mx * 48 + 4) * s,
+                      decoration: BoxDecoration(color: const Color(0xFF35D0BA), borderRadius: BorderRadius.circular(6 * s)),
+                    ),
+                    SizedBox(height: 3 * s),
+                    Text(letters[i], style: kidText(11 * s, c: const Color(0xFFA9ADDB))),
+                  ]),
+                ),
+            ]),
+          ),
+        ]),
+      ),
+      _card(
+        s,
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Needs a little practice', style: kidText(18 * s)),
+          SizedBox(height: 6 * s),
+          if (_weak.isEmpty) Text('Nothing yet. Keep playing!', style: kidText(14 * s, w: FontWeight.w600)),
+          for (final w in _weak) Padding(padding: EdgeInsets.only(top: 3 * s), child: Text('\u2022 $w', style: kidText(15 * s, w: FontWeight.w600))),
+        ]),
+      ),
+      _card(
+        s,
+        Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text("Scan today's homework", style: kidText(18 * s)),
+              Text('Photograph a page. It becomes a quiz on the TV.', style: kidText(14 * s, w: FontWeight.w600)),
+            ]),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AddContentScreen())),
+            icon: const Icon(Icons.document_scanner_rounded),
+            label: const Text('Scan'),
+          ),
+        ]),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = uiScale(context);
@@ -252,6 +345,7 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
       body: ListView(
         padding: EdgeInsets.fromLTRB(12 * s, 0, 12 * s, 24 * s),
         children: [
+          if (_rep.isNotEmpty) ..._reportCards(s, modes),
           _card(
             s,
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -285,27 +379,6 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
               ),
             ]),
           ),
-          for (final r in _rep)
-            _card(
-              s,
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Text(r.p.emoji, style: TextStyle(fontSize: 36 * s)),
-                  SizedBox(width: 10 * s),
-                  Expanded(child: Text(r.p.name, style: kidText(22 * s))),
-                  Text('\u{1F525} ${r.streak}   ⭐ ${r.stars}', style: kidText(16 * s)),
-                ]),
-                SizedBox(height: 8 * s),
-                Text(
-                  'Today: ${modes.entries.map((e) => '${e.value} ${r.today[e.key] ?? 0}').join('  •  ')}',
-                  style: kidText(14 * s, w: FontWeight.w600),
-                ),
-                SizedBox(height: 10 * s),
-                Text('Answers in the last 7 days', style: kidText(12 * s, c: const Color(0xFFA9ADDB))),
-                SizedBox(height: 4 * s),
-                _bars(s, r.week),
-              ]),
-            ),
         ],
       ),
     );

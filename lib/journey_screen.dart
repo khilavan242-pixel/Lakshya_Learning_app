@@ -52,13 +52,6 @@ class _JourneyScreenState extends State<JourneyScreen> {
       total++;
       if (Mastery.isMastered('spell:${c.word}')) done++;
     }
-    for (final set in _sets) {
-      if (!ids.contains(set.id)) continue;
-      for (final q in set.questions) {
-        total++;
-        if (Mastery.isMastered('quiz:${set.id}:${q.question}')) done++;
-      }
-    }
     return total == 0 ? -1 : done / total;
   }
 

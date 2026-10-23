@@ -64,9 +64,6 @@ class _ChapterScreenState extends State<ChapterScreen> {
   int get _quizTotal => _sets.fold<int>(0, (int a, QuizSet q) => a + q.questions.length);
   int get _quizDone {
     var n = 0;
-    for (final set in _sets) {
-      n += Mastery.masteredIn<QuizQuestion>(set.questions, (QuizQuestion q) => 'quiz:${set.id}:${q.question}');
-    }
     return n;
   }
 
@@ -88,16 +85,12 @@ class _ChapterScreenState extends State<ChapterScreen> {
 
   double get _overall {
     final wDone = Mastery.masteredIn<WordCard>(_words, _wk);
-    final total = _words.length + _quizTotal;
-    return total == 0 ? 0 : (wDone + _quizDone) / total;
+    final total = _words.length;
+    return total == 0 ? 0 : wDone / total;
   }
 
   /// Test: a short round of this chapter's questions, mixed, no repeats of the same question.
   Future<void> _playTest() async {
-    if (_overall < 0.8) {
-      showKidsSnack(context, 'Practise first. The Test opens at 80%.');
-      return;
-    }
     List<QuizItem> build() {
       final list = <QuizItem>[for (final set in _sets) for (final q in set.questions) QuizItem(set.id, q)]..shuffle();
       return list.take(PlayerStore.active.rounds).toList();
@@ -113,10 +106,6 @@ class _ChapterScreenState extends State<ChapterScreen> {
   Future<void> _playQuiz() async {
     List<QuizItem> build() {
       var list = <QuizItem>[for (final set in _sets) for (final q in set.questions) QuizItem(set.id, q)];
-      if (PlayerStore.active.smart) {
-        final left = Mastery.notMastered<QuizItem>(list, (QuizItem i) => i.key);
-        if (left.isNotEmpty) list = left;
-      }
       list.shuffle();
       return list;
     }
@@ -191,13 +180,12 @@ class _ChapterScreenState extends State<ChapterScreen> {
     }
     if (_sets.isNotEmpty) {
       n++;
-      final done = _quizDone;
-      steps.add(_step(s, n: n, title: 'Quiz', text: '$_quizTotal questions. Tricky ones come back first.', progress: _quizTotal == 0 ? 0 : done / _quizTotal, button: done == 0 ? 'Start' : 'Continue', color: const Color(0xFFF2709C), onTap: _playQuiz, first: steps.isEmpty));
+      steps.add(_step(s, n: n, title: 'Quiz', text: '$_quizTotal questions.', progress: 0, button: 'Start', color: const Color(0xFFF2709C), onTap: _playQuiz, first: steps.isEmpty));
     }
     if (_sets.isNotEmpty) {
       n++;
-      final open = _overall >= 0.8;
-      steps.add(_step(s, n: n, title: 'Test', text: open ? 'A mixed round of ${PlayerStore.active.rounds} questions.' : 'Opens when you reach 80% in Words and Quiz.', progress: _overall, button: open ? 'Start Test' : '80% needed', color: open ? const Color(0xFF35D0BA) : const Color(0xFF5A5FA6), onTap: _playTest, locked: !open));
+      const open = true;
+      steps.add(_step(s, n: n, title: 'Test', text: open ? 'A mixed round of ${PlayerStore.active.rounds} questions.' : 'Opens when ready.', progress: _overall, button: open ? 'Start Test' : '80% needed', color: open ? const Color(0xFF35D0BA) : const Color(0xFF5A5FA6), onTap: _playTest, locked: !open));
     }
     final phone = isPhone(context);
     final body = steps.isEmpty
