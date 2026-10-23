@@ -39,7 +39,7 @@ jobs:
         run: |
           cd full_app
           # Generates separate, tiny APKs for different TV processors
-          flutter build apk --release --split-per-abi
+          flutter build apk --release --split-per-abi --no-shrink
 
       - name: Zip and Upload to Sendit
         run: |
