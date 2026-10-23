@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'bin.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
+import 'pin_pad.dart';
 import 'players.dart';
 import 'progress.dart';
 import 'tv_link.dart';
@@ -83,18 +84,23 @@ class TimeUpOverlay extends StatefulWidget {
 }
 
 class _TimeUpOverlayState extends State<TimeUpOverlay> {
-  final TextEditingController _c = TextEditingController();
+  String _entry = '';
   String _msg = '';
 
   Future<void> _unlock() async {
     final pin = await ParentPrefs.pin();
-    if (pin.isEmpty || _c.text.trim() == pin) {
+    if (pin.isEmpty || _entry == pin) {
       await ParentPrefs.addExtra(15);
       await UsageGuard.reload();
-      _c.clear();
-      setState(() => _msg = '');
+      setState(() {
+        _entry = '';
+        _msg = '';
+      });
     } else {
-      setState(() => _msg = 'Wrong PIN');
+      setState(() {
+        _entry = '';
+        _msg = 'Wrong PIN';
+      });
     }
   }
 
@@ -114,21 +120,8 @@ class _TimeUpOverlayState extends State<TimeUpOverlay> {
             SizedBox(height: 22 * s),
             Text('Parent: enter PIN for 15 more minutes', style: kidText(14 * s, w: FontWeight.w600)),
             SizedBox(height: 8 * s),
-            SizedBox(
-              width: 200 * s,
-              child: TextField(
-                controller: _c,
-                keyboardType: TextInputType.number,
-                obscureText: true,
-                maxLength: 4,
-                textAlign: TextAlign.center,
-                onSubmitted: (_) => _unlock(),
-                decoration: const InputDecoration(border: OutlineInputBorder(), counterText: ''),
-              ),
-            ),
+            PinPad(value: _entry, s: s, onChanged: (String v) => setState(() => _entry = v), onSubmit: _unlock),
             if (_msg.isNotEmpty) Text(_msg, style: kidText(14 * s, c: const Color(0xFFFF8A80))),
-            SizedBox(height: 8 * s),
-            FilledButton(onPressed: _unlock, child: const Text('Give 15 more minutes')),
           ]),
         ),
       ),
@@ -146,7 +139,7 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
   bool _checking = true;
   bool _ok = false;
   String _pin = '';
-  final TextEditingController _c = TextEditingController();
+  String _entry = '';
   String _msg = '';
   int _limit = 0;
   String _tvCode = '';
@@ -156,12 +149,6 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
   void initState() {
     super.initState();
     _init();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
   }
 
   Future<void> _init() async {
@@ -183,7 +170,7 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
   }
 
   Future<void> _submit() async {
-    final t = _c.text.trim();
+    final t = _entry;
     if (_pin.isEmpty) {
       if (t.length != 4 || int.tryParse(t) == null) {
         setState(() => _msg = 'Use exactly 4 digits.');
@@ -192,10 +179,13 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
       await ParentPrefs.setPin(t);
       _pin = t;
     } else if (t != _pin) {
-      setState(() => _msg = 'Wrong PIN');
+      setState(() {
+        _entry = '';
+        _msg = 'Wrong PIN';
+      });
       return;
     }
-    _c.clear();
+    _entry = '';
     _ok = true;
     _msg = '';
     await _loadReport();
@@ -249,23 +239,8 @@ class _ParentZoneScreenState extends State<ParentZoneScreen> {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Text(_pin.isEmpty ? 'Choose a 4 digit PIN' : 'Enter your PIN', style: kidText(24 * s)),
               SizedBox(height: 12 * s),
-              SizedBox(
-                width: 220 * s,
-                child: TextField(
-                  controller: _c,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  obscureText: true,
-                  maxLength: 4,
-                  textAlign: TextAlign.center,
-                  onSubmitted: (_) => _submit(),
-                  decoration: const InputDecoration(border: OutlineInputBorder(), counterText: ''),
-                ),
-              ),
-              if (_msg.isNotEmpty) Text(_msg, style: kidText(16 * s, c: const Color(0xFFFF8A80))),
-              SizedBox(height: 10 * s),
-              FilledButton(onPressed: _submit, child: Text(_pin.isEmpty ? 'Save PIN' : 'Open')),
+              PinPad(value: _entry, s: s, onChanged: (String v) => setState(() => _entry = v), onSubmit: _submit),
+              if (_msg.isNotEmpty) Padding(padding: EdgeInsets.only(top: 6 * s), child: Text(_msg, style: kidText(16 * s, c: const Color(0xFFFF8A80)))),
             ]),
           ),
         ),

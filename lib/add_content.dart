@@ -39,6 +39,8 @@ class _AddContentScreenState extends State<AddContentScreen> {
   bool _busy = false;
   List<_Row> _rows = <_Row>[];
   int _dups = 0;
+  String _eff = ''; // the text that is really saved (paragraphs become fill-in-the-blank lines)
+  String _info = '';
   Set<String> _knownQuestions = <String>{};
   Set<String> _knownWords = <String>{};
 
@@ -95,6 +97,8 @@ class _AddContentScreenState extends State<AddContentScreen> {
     final t = _text.text.trim();
     _error = '';
     _done = '';
+    _info = '';
+    _eff = t;
     _rows = <_Row>[];
     _dups = 0;
     if (t.isEmpty) {
@@ -120,7 +124,17 @@ class _AddContentScreenState extends State<AddContentScreen> {
           _rows.add(_Row(w, '', dup));
         }
       } else {
-        final doc = LearnParser.parse(t, title: _title.text.trim());
+        LearnDoc doc;
+        try {
+          doc = LearnParser.parse(t, title: _title.text.trim());
+        } on FormatException {
+          // A paragraph from a book page: turn every sentence into a fill-in-the-blank card.
+          final blanks = _autoBlanks(t);
+          if (blanks.isEmpty) rethrow;
+          doc = LearnParser.parse(blanks, title: _title.text.trim());
+          _eff = blanks;
+          _info = 'This looks like a paragraph. Made ${doc.cards.length} fill-in-the-blank cards: one hidden word in each sentence.';
+        }
         if (_title.text.isEmpty && doc.title != 'Study list') _title.text = doc.title;
         for (final c in doc.cards) {
           final head = c.front.isNotEmpty ? c.front : (c.rows.isNotEmpty ? '${c.rows.first[0]} = ${c.rows.first[1]}' : '');
@@ -133,6 +147,32 @@ class _AddContentScreenState extends State<AddContentScreen> {
       _error = 'Could not read this text.';
     }
     setState(() {});
+  }
+
+  /// "Teachers teach us good values." -> "Teachers teach us good [values]."
+  String _autoBlanks(String t) {
+    final flat = t.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final out = <String>[];
+    for (final raw in flat.split(RegExp(r'(?<=[.?!\u0964])\s+'))) {
+      final sentence = raw.trim();
+      final words = sentence.split(' ');
+      if (words.length < 3) continue;
+      var best = -1;
+      var bestLen = 0;
+      for (var i = 0; i < words.length; i++) {
+        final core = words[i].replaceAll(RegExp(r'[.,;:!?"()\u0964\u2018\u2019\u201C\u201D\[\]*]'), '');
+        if (core.length >= 4 && core.length > bestLen) {
+          best = i;
+          bestLen = core.length;
+        }
+      }
+      if (best < 0) continue;
+      final w = words[best];
+      final core = w.replaceAll(RegExp(r'[.,;:!?"()\u0964\u2018\u2019\u201C\u201D\[\]*]'), '');
+      words[best] = w.replaceFirst(core, '[$core]');
+      out.add(words.join(' '));
+    }
+    return out.join('\n');
   }
 
   String _topicName() {
@@ -210,7 +250,7 @@ class _AddContentScreenState extends State<AddContentScreen> {
   }
 
   Future<void> _save() async {
-    final t = _text.text.trim();
+    final t = _eff.isNotEmpty ? _eff : _text.text.trim();
     if (t.isEmpty || _error.isNotEmpty || _rows.isEmpty) return;
     setState(() {
       _busy = true;
@@ -283,7 +323,7 @@ class _AddContentScreenState extends State<AddContentScreen> {
   }
 
   Future<void> _sendToTv() async {
-    final t = _text.text.trim();
+    final t = _eff.isNotEmpty ? _eff : _text.text.trim();
     if (t.isEmpty || _error.isNotEmpty || _rows.isEmpty) return;
     setState(() {
       _busy = true;
@@ -407,6 +447,7 @@ class _AddContentScreenState extends State<AddContentScreen> {
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 _label(s, 'Step 2: check what we found'),
                 Text('Found ${_rows.length} $kindName', style: kidText(20 * s)),
+                if (_info.isNotEmpty) Text(_info, style: kidText(14 * s, c: const Color(0xFF7DF0DC), w: FontWeight.w700)),
                 if (_dups > 0) Text('$_dups already added, they will be skipped.', style: kidText(14 * s, c: const Color(0xFFFFD9A0), w: FontWeight.w700)),
                 SizedBox(height: 8 * s),
                 Wrap(spacing: 8 * s, children: [

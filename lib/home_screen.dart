@@ -98,154 +98,118 @@ class _HomeScreenState extends State<HomeScreen> {
     final s = uiScale(context);
     final player = PlayerStore.active;
 
-    final tiles = <Widget Function(double, double)>[
-      (double w, double h) => BigTile(
-        emoji: '✏️',
-        title: 'Spelling',
-        subtitle: 'Unscramble letters',
-        colors: const <Color>[Color(0xFFFF9A44), Color(0xFFFC6076)],
-        s: s,
-        width: w / s,
-        height: h / s,
-        onPressed: () => _go(const TopicLobbyScreen()),
-      ),
-      (double w, double h) => BigTile(
-        emoji: '🧮',
-        title: 'Maths',
-        subtitle: 'Grades, topics, tests',
-        colors: const <Color>[Color(0xFF36D1DC), Color(0xFF5B86E5)],
-        s: s,
-        width: w / s,
-        height: h / s,
-        onPressed: () => _go(const MathHomeScreen()),
-      ),
-      (double w, double h) => BigTile(
-        emoji: '🧠',
-        title: 'Quiz Time',
-        subtitle: 'English & हिन्दी',
-        colors: const <Color>[Color(0xFFB24592), Color(0xFFF15F79)],
-        s: s,
-        width: w / s,
-        height: h / s,
-        onPressed: () => _go(const QuizHomeScreen()),
-      ),
-      (double w, double h) => BigTile(
-        emoji: '📖',
-        title: 'Quick Learn',
-        subtitle: 'Study with answers',
-        colors: const <Color>[Color(0xFF00897B), Color(0xFF26C6DA)],
-        s: s,
-        width: w / s,
-        height: h / s,
-        onPressed: () => _go(const QuickLearnHome()),
-      ),
-      (double w, double h) => BigTile(
-        emoji: '📅',
-        title: 'Daily Challenge',
-        subtitle: "Today's maths quiz",
-        colors: const <Color>[Color(0xFF56AB2F), Color(0xFFA8E063)],
-        s: s,
-        width: w / s,
-        height: h / s,
-        onPressed: () => _go(MathPlayScreen(topicId: '', grade: player.grade, mode: 'daily')),
-      ),
+    final modes = <_Mode>[
+      _Mode('\u270F\uFE0F', 'Spelling', 'Unscramble letters', const <Color>[Color(0xFFFFB84D), Color(0xFFFF7B6B)], () => _go(const TopicLobbyScreen())),
+      _Mode('\u{1F9EE}', 'Maths', 'Grades, topics, tests', const <Color>[Color(0xFF1FB4D0), Color(0xFF4C7BF0)], () => _go(const MathHomeScreen())),
+      _Mode('\u{1F9E0}', 'Quiz Time', 'English & \u0939\u093F\u0928\u094D\u0926\u0940', const <Color>[Color(0xFFF2709C), Color(0xFFFF9472)], () => _go(const QuizHomeScreen())),
+      _Mode('\u{1F4D6}', 'Quick Learn', 'Study with answers', const <Color>[Color(0xFF00A38C), Color(0xFF35D0BA)], () => _go(const QuickLearnHome())),
+      _Mode('\u{1F4C5}', 'Daily Challenge', "Today's maths quiz", const <Color>[Color(0xFF7C4DFF), Color(0xFF8B5CF6)], () => _go(MathPlayScreen(topicId: '', grade: player.grade, mode: 'daily'))),
     ];
 
-    if (isPhone(context)) return _phoneHome(context, s, player, tiles);
+    if (isPhone(context)) return _phoneHome(context, s, player, modes);
 
     return Scaffold(
       body: KidsBackground(
         child: SafeArea(
-          child: Padding(
-            padding: tvPadding(s),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [ClipRRect(borderRadius: BorderRadius.circular(8 * s), child: Image.asset('assets/logo.png', width: 38 * s, height: 38 * s)), SizedBox(width: 10 * s), Text(kAppName, style: kidText(34 * s))]),
+          child: Row(
+            children: [
+              _rail(s),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(26 * s, 12 * s, 26 * s, 10 * s),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Expanded(child: _GreetingRow(player: player, s: s)),
+                        SizedBox(width: 12 * s),
+                        TVFocusable(
+                          onPressed: () => _go(const PlayersScreen()),
+                          builder: (BuildContext context, bool focused) => Container(
+                            padding: EdgeInsets.symmetric(horizontal: 14 * s, vertical: 6 * s),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF26A69A),
+                              borderRadius: BorderRadius.circular(30 * s),
+                              border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 3),
+                            ),
+                            child: Text('${player.emoji} ${player.name}', style: kidText(17 * s)),
+                          ),
+                        ),
+                      ]),
+                      SizedBox(height: 12 * s),
+                      _MissionCard(s: s, grade: player.grade, onOpen: _go),
+                      _newShelf(s),
+                      SizedBox(height: 14 * s),
+                      Text('Learn and play', style: kidText(20 * s)),
+                      SizedBox(height: 8 * s),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: SizedBox(
+                            height: 150 * s,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (var i = 0; i < modes.length; i++)
+                                  Expanded(child: Padding(padding: EdgeInsets.only(right: i == modes.length - 1 ? 0 : 14 * s), child: _ModeCard(mode: modes[i], s: s, fill: true))),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 10 * s),
-                    ActionButton(
-                      s: s,
-                      icon: Icons.face_rounded,
-                      label: '${player.emoji} ${player.name}',
-                      color: const Color(0xFF26A69A),
-                      onPressed: () => _go(const PlayersScreen()),
-                    ),
-                    SizedBox(width: 10 * s),
-                    ActionButton(
-                      s: s,
-                      icon: Icons.folder_open_rounded,
-                      label: 'Organize',
-                      color: const Color(0xFF8E24AA),
-                      onPressed: () => _go(const LibraryManagerScreen()),
-                    ),
-                    SizedBox(width: 10 * s),
-                    ActionButton(
-                      s: s,
-                      icon: Icons.add_circle_rounded,
-                      label: 'Add',
-                      color: const Color(0xFFFFB84D),
-                      onPressed: () => _go(const AddContentScreen()),
-                    ),
-                    SizedBox(width: 10 * s),
-                    ActionButton(
-                      s: s,
-                      icon: Icons.lock_rounded,
-                      color: const Color(0xFF5C6BC0),
-                      onPressed: () => _go(const ParentZoneScreen()),
-                    ),
-                    SizedBox(width: 10 * s),
-                    ActionButton(
-                      s: s,
-                      icon: Icons.settings_rounded,
-                      label: 'Settings',
-                      color: const Color(0xFF78909C),
-                      onPressed: () => _go(const PlayerSettingsScreen(home: true)),
-                    ),
-                    SizedBox(width: 10 * s),
-                    ActionButton(
-                      s: s,
-                      icon: Icons.qr_code_2_rounded,
-                      color: const Color(0xFF00BFA5),
-                      onPressed: () => showPhoneManager(context),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 4 * s),
-                _GreetingRow(player: player, s: s),
-                SizedBox(height: 8 * s),
-                _MissionCard(s: s, grade: player.grade, onOpen: _go),
-                _newShelf(s),
-                if (StorageLocation.isFallback && StorageLocation.mode == 'documents' && !StorageLocation.hideWarning)
-                  Padding(
-                    padding: EdgeInsets.only(top: 6 * s),
-                    child: ActionButton(
-                      s: s,
-                      icon: Icons.warning_amber_rounded,
-                      label: 'Old data missing? Tap to fix storage access',
-                      color: const Color(0xFFF57C00),
-                      onPressed: () => _go(const StorageScreen()),
-                    ),
+                    ],
                   ),
-                Expanded(child: AdaptiveGrid(builders: tiles, aspect: 1.25, minWidth: 130 * s, maxWidth: 230 * s, gap: 16 * s)),
-                if (_savePath.isNotEmpty)
-                  Text('Saved in: $_savePath', style: kidText(13 * s, w: FontWeight.w400), overflow: TextOverflow.ellipsis),
-                SizedBox(height: size.height * 0.06),
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _phoneHome(BuildContext context, double s, Player player, List<Widget Function(double, double)> tiles) {
+  /// Left navigation rail (TV): big, easy to reach with the remote.
+  Widget _rail(double s) {
+    Widget item(IconData icon, String label, VoidCallback onTap, {bool active = false}) => Padding(
+          padding: EdgeInsets.symmetric(vertical: 3 * s),
+          child: TVFocusable(
+            onPressed: onTap,
+            scale: 1.06,
+            builder: (BuildContext context, bool focused) => Container(
+              width: 74 * s,
+              padding: EdgeInsets.symmetric(vertical: 8 * s),
+              decoration: BoxDecoration(
+                color: active ? const Color(0xFF2B2F66) : (focused ? const Color(0x33FFFFFF) : Colors.transparent),
+                borderRadius: BorderRadius.circular(18 * s),
+                border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 3),
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: 24 * s, color: active || focused ? Colors.white : const Color(0xFFB4B8E6)),
+                SizedBox(height: 3 * s),
+                Text(label, style: kidText(11.5 * s, c: active || focused ? Colors.white : const Color(0xFFB4B8E6))),
+              ]),
+            ),
+          ),
+        );
+    return Container(
+      width: 94 * s,
+      padding: EdgeInsets.symmetric(vertical: 12 * s),
+      decoration: const BoxDecoration(color: Color(0xB80A0B20), border: Border(right: BorderSide(color: Color(0x12FFFFFF)))),
+      child: Column(children: [
+        ClipRRect(borderRadius: BorderRadius.circular(10 * s), child: Image.asset('assets/logo.png', width: 40 * s, height: 40 * s)),
+        SizedBox(height: 10 * s),
+        item(Icons.home_rounded, 'Home', () {}, active: true),
+        item(Icons.add_circle_rounded, 'Add', () => _go(const AddContentScreen())),
+        item(Icons.folder_open_rounded, 'Library', () => _go(const LibraryManagerScreen())),
+        const Spacer(),
+        item(Icons.lock_rounded, 'Parents', () => _go(const ParentZoneScreen())),
+        item(Icons.settings_rounded, 'Settings', () => _go(const PlayerSettingsScreen(home: true))),
+        item(Icons.qr_code_2_rounded, 'Share', () => showPhoneManager(context)),
+      ]),
+    );
+  }
+
+  Widget _phoneHome(BuildContext context, double s, Player player, List<_Mode> modes) {
     Widget chipBtn(IconData icon, String label, Color c, VoidCallback f) => Expanded(
           child: TVFocusable(
             onPressed: f,
@@ -270,7 +234,6 @@ class _HomeScreenState extends State<HomeScreen> {
           child: LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
             const gap = 12.0;
             final tileW = (box.maxWidth - 28 - gap) / 2;
-            final tileH = tileW / 1.15;
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
               child: Column(
@@ -307,12 +270,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   _MissionCard(s: s, grade: player.grade, onOpen: _go, compact: true),
                   _newShelf(s),
                   SizedBox(height: 14 * s),
-                  Wrap(spacing: gap, runSpacing: gap, children: [for (final b in tiles) SizedBox(width: tileW, height: tileH, child: b(tileW, tileH))]),
-                  if (_savePath.isNotEmpty)
-                    Padding(
-                      padding: EdgeInsets.only(top: 14 * s),
-                      child: Text('Saved in: $_savePath', style: kidText(11 * s, w: FontWeight.w400), textAlign: TextAlign.center),
-                    ),
+                  Text('Learn and play', style: kidText(20 * s)),
+                  SizedBox(height: 10 * s),
+                  Wrap(spacing: gap, runSpacing: gap, children: [for (final m in modes) SizedBox(width: tileW, child: _ModeCard(mode: m, s: s))]),
                 ],
               ),
             );
@@ -489,6 +449,66 @@ class _MissionCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+
+class _Mode {
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final List<Color> colors;
+  final VoidCallback onTap;
+  const _Mode(this.emoji, this.title, this.subtitle, this.colors, this.onTap);
+}
+
+/// A premium dark card with a coloured top strip (same look as the design).
+class _ModeCard extends StatelessWidget {
+  final _Mode mode;
+  final double s;
+  final bool fill;
+  const _ModeCard({required this.mode, required this.s, this.fill = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return TVFocusable(
+      scale: 1.05,
+      onPressed: mode.onTap,
+      builder: (BuildContext context, bool focused) => AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        decoration: BoxDecoration(
+          color: const Color(0xFF181B3A),
+          borderRadius: BorderRadius.circular(22 * s),
+          border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 3),
+          boxShadow: focused ? [BoxShadow(color: mode.colors.last.withOpacity(0.55), blurRadius: 26)] : null,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(19 * s),
+          child: Column(
+            mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 66 * s,
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(horizontal: 14 * s),
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(gradient: LinearGradient(colors: mode.colors)),
+                child: Text(mode.emoji, style: TextStyle(fontSize: 34 * s)),
+              ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(14 * s, 10 * s, 14 * s, 12 * s),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(mode.title, style: kidText(17 * s), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  SizedBox(height: 2 * s),
+                  Text(mode.subtitle, style: kidText(12.5 * s, c: const Color(0xFFA9ADDB), w: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
+                ]),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
