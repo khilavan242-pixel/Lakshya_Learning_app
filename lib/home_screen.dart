@@ -116,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _rail(s),
               Expanded(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(26 * s, 12 * s, 26 * s, 10 * s),
+                  padding: EdgeInsets.fromLTRB(26 * s, 22 * s, 26 * s, 10 * s),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -403,7 +403,14 @@ class _MissionCard extends StatelessWidget {
               style: kidText(18 * s, w: FontWeight.w600),
             ),
             SizedBox(height: 8 * s),
-            Wrap(spacing: 10 * s, runSpacing: 6 * s, children: [for (var i = 0; i < steps.length; i++) pill(i)]),
+            if (compact)
+              Wrap(spacing: 10 * s, runSpacing: 6 * s, children: [for (var i = 0; i < steps.length; i++) pill(i)])
+            else
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(children: [for (var i = 0; i < steps.length; i++) Padding(padding: EdgeInsets.only(right: 10 * s), child: pill(i))]),
+              ),
           ],
         );
         final startBtn = TVFocusable(
@@ -440,11 +447,19 @@ class _MissionCard extends StatelessWidget {
           ),
           child: compact ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [info, SizedBox(height: 12 * s), startBtn]) : Row(
             children: [
-              Expanded(child: info),
-              SizedBox(width: 16 * s),
-              startBtn,
-              SizedBox(width: 14 * s),
-              Text('\u{1F989}', style: TextStyle(fontSize: 62 * s)),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  info,
+                  SizedBox(height: 10 * s),
+                  Row(children: [
+                    startBtn,
+                    SizedBox(width: 12 * s),
+                    Text('Press OK', style: kidText(13 * s, c: const Color(0xFFE6E3FF), w: FontWeight.w700)),
+                  ]),
+                ]),
+              ),
+              SizedBox(width: 10 * s),
+              SizedBox(width: 120 * s, height: 112 * s, child: CustomPaint(painter: _OwlPainter())),
             ],
           ),
         );
@@ -511,4 +526,56 @@ class _ModeCard extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// Lumi the owl mascot from the design (graduation cap), drawn with code so it is sharp on any screen.
+class _OwlPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.scale(size.width / 210, size.height / 196);
+    Paint f(int c) => Paint()..color = Color(c);
+    canvas.drawOval(Rect.fromCenter(center: const Offset(105, 190), width: 112, height: 12), f(0x40000000));
+    canvas.drawOval(Rect.fromCenter(center: const Offset(105, 118), width: 124, height: 136), f(0xFFA99BFF));
+    canvas.drawOval(Rect.fromCenter(center: const Offset(105, 132), width: 80, height: 92), f(0xFFE4DFFF));
+    for (final w in const <List<double>>[<double>[46, 124, 14], <double>[164, 124, -14]]) {
+      canvas.save();
+      canvas.translate(w[0], w[1]);
+      canvas.rotate(w[2] * 3.14159265 / 180);
+      canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: 32, height: 76), f(0xFF8B7BF2));
+      canvas.restore();
+    }
+    canvas.drawCircle(const Offset(80, 96), 25, f(0xFFFFFFFF));
+    canvas.drawCircle(const Offset(130, 96), 25, f(0xFFFFFFFF));
+    canvas.drawCircle(const Offset(84, 98), 13, f(0xFF14163A));
+    canvas.drawCircle(const Offset(126, 98), 13, f(0xFF14163A));
+    canvas.drawCircle(const Offset(88, 93), 4.5, f(0xFFFFFFFF));
+    canvas.drawCircle(const Offset(130, 93), 4.5, f(0xFFFFFFFF));
+    canvas.drawPath(Path()..moveTo(96, 112)..lineTo(105, 126)..lineTo(114, 112)..close(), f(0xFFFFB84D));
+    canvas.drawPath(Path()..moveTo(105, 44)..lineTo(167, 68)..lineTo(105, 92)..lineTo(43, 68)..close(), f(0xFF1B1C45));
+    canvas.drawPath(
+      Path()
+        ..moveTo(70, 78)
+        ..lineTo(70, 92)
+        ..cubicTo(70, 102, 140, 102, 140, 92)
+        ..lineTo(140, 78)
+        ..lineTo(105, 92)
+        ..close(),
+      f(0xFF2A2C66),
+    );
+    final line = Paint()
+      ..color = const Color(0xFFFFB84D)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(const Offset(162, 70), const Offset(162, 104), line);
+    canvas.drawCircle(const Offset(162, 108), 6, f(0xFFFFB84D));
+    line.strokeWidth = 4;
+    canvas.drawLine(const Offset(88, 184), const Offset(86, 191), line);
+    canvas.drawLine(const Offset(96, 184), const Offset(97, 191), line);
+    canvas.drawLine(const Offset(122, 184), const Offset(121, 191), line);
+    canvas.drawLine(const Offset(114, 184), const Offset(116, 191), line);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

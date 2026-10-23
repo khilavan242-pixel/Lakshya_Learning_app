@@ -3,6 +3,7 @@ import 'app_store.dart';
 import 'bin.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
+import 'phone_manager.dart';
 import 'players.dart';
 import 'learn_model.dart';
 import 'quiz_model.dart';
@@ -530,6 +531,20 @@ class _Eff {
   const _Eff(this.cls, this.sub);
 }
 
+class _ChInfo {
+  final String key;
+  final String chip;
+  final String title;
+  final List<LibItem> items;
+  final int notes;
+  final int quiz;
+  final int words;
+  final double progress;
+  final String status;
+  final bool isNew;
+  const _ChInfo(this.key, this.chip, this.title, this.items, this.notes, this.quiz, this.words, this.progress, this.status, this.isNew);
+}
+
 class LibraryBrowser extends StatefulWidget {
   final String title;
   final String myClassId;
@@ -687,6 +702,245 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
     if (mounted) _reload();
   }
 
+
+  String _filter = 'all'; // all | new | needs | done
+
+  _ChInfo _info(String key, List<LibItem> items) {
+    var notes = 0, quiz = 0, words = 0, total = 0, mastered = 0, started = 0, weak = 0;
+    var isNew = false;
+    final limit = DateTime.now().subtract(const Duration(days: 7)).millisecondsSinceEpoch;
+    void card(String k) {
+      if (k.isEmpty) return;
+      total++;
+      final st = Mastery.statusOf(k);
+      if (st == 'mastered' || st == 'review') mastered++;
+      if (st != 'new') started++;
+      if (st == 'weak') weak++;
+    }
+
+    for (final it in items) {
+      if (it.kind == 'learn') notes += it.count;
+      if (it.kind == 'quiz') quiz += it.count;
+      if (it.kind == 'spell') words += it.count;
+      if ((int.tryParse(Library.meta[it.key]?['at'] ?? '') ?? 0) > limit) isNew = true;
+      final p = it.payload;
+      if (p is LearnSet) {
+        for (final c in p.cards) {
+          card(c.key);
+        }
+      } else if (p is QuizSet) {
+        for (final q in p.questions) {
+          card('quiz:${p.id}:${q.question}');
+        }
+      }
+    }
+    var chip = 'Other';
+    var title = 'Other';
+    if (key != kUnsorted) {
+      final m = RegExp(r'^(Ch \d+)\s*:?\s*(.*)$').firstMatch(key);
+      chip = m?.group(1) ?? 'Chapter';
+      title = (m != null && (m.group(2) ?? '').isNotEmpty) ? m.group(2)! : key;
+    }
+    String status;
+    if (weak > 0) {
+      status = 'Needs practice';
+    } else if (total > 0 && mastered / total >= 0.9) {
+      status = 'Mastered';
+    } else if (started > 0) {
+      status = 'Learning';
+    } else {
+      status = 'Not started';
+    }
+    return _ChInfo(key, chip, title, items, notes, quiz, words, total == 0 ? 0 : mastered / total, status, isNew);
+  }
+
+  Widget _chip(double s, String text, Color bg, Color fg, {bool selected = false}) => Container(
+        padding: EdgeInsets.symmetric(horizontal: 11 * s, vertical: 4 * s),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20 * s), border: selected ? Border.all(color: Colors.white, width: 2) : null),
+        child: Text(text, style: kidText(12.5 * s, c: fg)),
+      );
+
+  Future<void> _openChapter(String key, String scopeName, List<LibItem> items) async {
+    final open = widget.onOpenChapter;
+    if (open == null) {
+      setState(() => _ch = key);
+      return;
+    }
+    await open(key, scopeName, items);
+    if (mounted) _reload();
+  }
+
+  /// The chapter shelf from the design: filters, one card per chapter with its status, content and progress.
+  Widget _chapterView(double s, List<LibItem> scope, String scopeName, List<String> chapters, String subjectName, String crumb) {
+    final all = <_ChInfo>[for (final c in chapters) _info(c, scope.where((LibItem x) => x.chapter == c).toList())];
+    final others = scope.where((LibItem x) => x.chapter.isEmpty).toList();
+    if (others.isNotEmpty) all.add(_info(kUnsorted, others));
+    final nNew = all.where((_ChInfo c) => c.isNew).length;
+    final nNeeds = all.where((_ChInfo c) => c.status == 'Needs practice').length;
+    final nDone = all.where((_ChInfo c) => c.status == 'Mastered').length;
+    final shown = all.where((_ChInfo c) {
+      if (_filter == 'new') return c.isNew;
+      if (_filter == 'needs') return c.status == 'Needs practice';
+      if (_filter == 'done') return c.status == 'Mastered';
+      return true;
+    }).toList();
+    final extras = widget.extras(scope, scopeName);
+    final journey = widget.onOpenJourney;
+
+    Widget filter(String id, String label) => Padding(
+          padding: EdgeInsets.only(right: 10 * s),
+          child: TVFocusable(
+            onPressed: () => setState(() => _filter = id),
+            builder: (BuildContext context, bool focused) => Container(
+              padding: EdgeInsets.symmetric(horizontal: 18 * s, vertical: 8 * s),
+              decoration: BoxDecoration(
+                color: _filter == id ? Colors.white : const Color(0xFF1E2150),
+                borderRadius: BorderRadius.circular(30 * s),
+                border: Border.all(color: focused ? const Color(0xFFFFB84D) : Colors.transparent, width: 3),
+              ),
+              child: Text(label, style: kidText(16 * s, c: _filter == id ? const Color(0xFF0E1026) : Colors.white)),
+            ),
+          ),
+        );
+
+    Widget pill(String label, VoidCallback f) => Padding(
+          padding: EdgeInsets.only(right: 10 * s),
+          child: TVFocusable(
+            onPressed: f,
+            builder: (BuildContext context, bool focused) => Container(
+              padding: EdgeInsets.symmetric(horizontal: 14 * s, vertical: 8 * s),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2B2F66),
+                borderRadius: BorderRadius.circular(30 * s),
+                border: Border.all(color: focused ? Colors.white : Colors.transparent, width: 3),
+              ),
+              child: Text(label, style: kidText(15 * s)),
+            ),
+          ),
+        );
+
+    Widget card(_ChInfo c, double w, bool first) {
+      Color sbg, sfg, bar;
+      switch (c.status) {
+        case 'Mastered':
+          sbg = const Color(0x40FFB84D);
+          sfg = const Color(0xFFFFD9A0);
+          bar = const Color(0xFFFFB84D);
+          break;
+        case 'Needs practice':
+          sbg = const Color(0x40FF7B6B);
+          sfg = const Color(0xFFFFB4A8);
+          bar = const Color(0xFFFF7B6B);
+          break;
+        case 'Learning':
+          sbg = const Color(0x4D8F82FF);
+          sfg = const Color(0xFFCFC9FF);
+          bar = const Color(0xFF35D0BA);
+          break;
+        default:
+          sbg = const Color(0xFF2B2F66);
+          sfg = const Color(0xFFA9ADDB);
+          bar = const Color(0xFF35D0BA);
+      }
+      return SizedBox(
+        width: w,
+        child: TVFocusable(
+          autofocus: first,
+          scale: 1.04,
+          onPressed: () => _openChapter(c.key, scopeName, c.items),
+          builder: (BuildContext context, bool focused) => AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            constraints: BoxConstraints(minHeight: 128 * s),
+            padding: EdgeInsets.all(14 * s),
+            decoration: BoxDecoration(
+              color: focused ? const Color(0xFF242862) : const Color(0xFF181B3A),
+              borderRadius: BorderRadius.circular(22 * s),
+              border: Border.all(color: focused ? Colors.white : (c.isNew ? const Color(0xFF35D0BA) : Colors.transparent), width: focused ? 4 : 2),
+              boxShadow: focused ? const [BoxShadow(color: Color(0x668F82FF), blurRadius: 26)] : null,
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Wrap(spacing: 8 * s, runSpacing: 4 * s, children: [
+                _chip(s, c.chip, const Color(0xFF2B2F66), Colors.white),
+                if (c.isNew) _chip(s, 'NEW', const Color(0xFF35D0BA), const Color(0xFF06241F)) else _chip(s, c.status, sbg, sfg),
+              ]),
+              SizedBox(height: 8 * s),
+              Text(c.title, style: kidText(20 * s), maxLines: 2, overflow: TextOverflow.ellipsis),
+              SizedBox(height: 8 * s),
+              Wrap(spacing: 6 * s, runSpacing: 4 * s, children: [
+                if (c.notes > 0) _chip(s, 'Notes ${c.notes}', const Color(0x404C7BF0), const Color(0xFFB9CBFF)),
+                if (c.quiz > 0) _chip(s, 'Quiz ${c.quiz}', const Color(0x40F2709C), const Color(0xFFFFC1D6)),
+                if (c.words > 0) _chip(s, 'Words ${c.words}', const Color(0x40FFB84D), const Color(0xFFFFD9A0)),
+              ]),
+              SizedBox(height: 12 * s),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(value: c.progress, minHeight: 7 * s, color: bar, backgroundColor: const Color(0xFF2A2E63)),
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
+      final gap = 14 * s;
+      final cols = box.maxWidth >= 820 ? 4 : (box.maxWidth >= 560 ? 3 : 2);
+      final w = (box.maxWidth - gap * (cols - 1) - 4) / cols;
+      return SingleChildScrollView(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('$subjectName chapters', style: kidText(28 * s)),
+          SizedBox(height: 10 * s),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              filter('all', 'All ${all.length}'),
+              filter('new', 'New $nNew'),
+              filter('needs', 'Needs practice $nNeeds'),
+              filter('done', 'Done $nDone'),
+              SizedBox(width: 10 * s),
+              if (journey != null && chapters.length >= 2)
+                pill('\u{1F5FA}️ Journey', () async {
+                  await journey(scopeName, chapters, <String, List<LibItem>>{for (final c in chapters) c: scope.where((LibItem x) => x.chapter == c).toList()});
+                  if (mounted) _reload();
+                }),
+              for (final ex in extras)
+                pill('${ex.emoji} ${ex.title}', () async {
+                  await ex.onPressed();
+                  if (mounted) _reload();
+                }),
+            ]),
+          ),
+          SizedBox(height: 14 * s),
+          Wrap(spacing: gap, runSpacing: gap, children: [
+            for (var i = 0; i < shown.length; i++) card(shown[i], w, i == 0),
+            if (!isPhone(context))
+              SizedBox(
+                width: w,
+                child: TVFocusable(
+                  onPressed: () => showPhoneManager(context),
+                  builder: (BuildContext context, bool focused) => Container(
+                    constraints: BoxConstraints(minHeight: 128 * s),
+                    padding: EdgeInsets.all(14 * s),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22 * s),
+                      border: Border.all(color: focused ? Colors.white : const Color(0xFF5A5FA6), width: focused ? 4 : 2),
+                    ),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.qr_code_2_rounded, size: 40 * s, color: Colors.white),
+                      SizedBox(height: 6 * s),
+                      Text('Add from phone', style: kidText(18 * s)),
+                      Text('Scan the QR code', style: kidText(13 * s, c: const Color(0xFFA9ADDB), w: FontWeight.w600)),
+                    ]),
+                  ),
+                ),
+              ),
+          ]),
+          SizedBox(height: 16 * s),
+        ]),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = uiScale(context);
@@ -695,6 +949,7 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
     }
     final e = _eff();
     final tiles = <Widget Function(double, double)>[];
+    Widget? chapterView;
     var crumb = widget.title;
     var gradientIndex = 0;
 
@@ -781,6 +1036,7 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
               ));
         }
         if (inChapterList) {
+          chapterView = _chapterView(s, scope, scopeName, chapters, e.sub == kAll ? _clsLabel(e.cls!) : _subLabel(e.sub!), crumb);
           final journey = widget.onOpenJourney;
           if (journey != null && chapters.length >= 2) {
             final first = tiles.isEmpty;
@@ -839,7 +1095,7 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
 
     final Widget grid = _items.isEmpty
         ? Center(child: Text(widget.emptyText, textAlign: TextAlign.center, style: kidText(24 * s)))
-        : AdaptiveGrid(builders: tiles, aspect: 1.2, minWidth: 150 * s, maxWidth: 260 * s, gap: 20 * s);
+        : (chapterView ?? AdaptiveGrid(builders: tiles, aspect: 1.2, minWidth: 150 * s, maxWidth: 260 * s, gap: 20 * s));
 
     return PopScope(
       canPop: !_canGoUp(),
