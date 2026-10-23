@@ -514,6 +514,8 @@ class LibraryBrowser extends StatefulWidget {
   final Listenable? refresh;
   /// When set, tapping a chapter opens this (the Chapter page) instead of listing its items.
   final Future<void> Function(String chapter, String trail, List<LibItem> items)? onOpenChapter;
+  /// When set, a "Journey" tile shows the chapters of a subject as a path.
+  final Future<void> Function(String trail, List<String> chapters, Map<String, List<LibItem>> items)? onOpenJourney;
 
   const LibraryBrowser({
     super.key,
@@ -526,6 +528,7 @@ class LibraryBrowser extends StatefulWidget {
     required this.actions,
     this.refresh,
     this.onOpenChapter,
+    this.onOpenJourney,
   });
 
   @override
@@ -751,6 +754,24 @@ class _LibraryBrowserState extends State<LibraryBrowser> {
               ));
         }
         if (inChapterList) {
+          final journey = widget.onOpenJourney;
+          if (journey != null && chapters.length >= 2) {
+            final first = tiles.isEmpty;
+            tiles.add((double w, double h) => BigTile(
+                  emoji: '\u{1F5FA}\uFE0F',
+                  title: 'Journey',
+                  subtitle: '${chapters.length} chapters in order',
+                  colors: const <Color>[Color(0xFF7C4DFF), Color(0xFF40C4FF)],
+                  s: s,
+                  width: w / s,
+                  height: h / s,
+                  autofocus: first,
+                  onPressed: () async {
+                    await journey(scopeName, chapters, <String, List<LibItem>>{for (final c in chapters) c: scope.where((LibItem x) => x.chapter == c).toList()});
+                    if (mounted) _reload();
+                  },
+                ));
+          }
           for (final ch in chapters) {
             final n = scope.where((LibItem x) => x.chapter == ch).length;
             tiles.add(folder('\u{1F4D8}', ch, countText(n), () async {
