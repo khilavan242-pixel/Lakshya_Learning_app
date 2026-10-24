@@ -394,6 +394,27 @@ class _AddContentScreenState extends State<AddContentScreen> {
 
   Widget _label(double s, String t) => Padding(padding: EdgeInsets.only(bottom: 6 * s), child: Text(t.toUpperCase(), style: kidText(12 * s, c: const Color(0xFFA9ADDB))));
 
+  Widget _stepBar(double s, int step) {
+    const names = <String>['Add', 'Check', 'Save'];
+    return Padding(
+      padding: EdgeInsets.only(bottom: 10 * s),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Step $step of 3  \u2022  ${names[step - 1]}', style: kidText(14 * s, w: FontWeight.w700, c: const Color(0xFFA9ADDB))),
+        SizedBox(height: 6 * s),
+        Row(children: [
+          for (var i = 1; i <= 3; i++)
+            Expanded(
+              child: Container(
+                height: 6 * s,
+                margin: EdgeInsets.only(right: i < 3 ? 6 * s : 0),
+                decoration: BoxDecoration(color: i <= step ? const Color(0xFF35D0BA) : const Color(0xFF2A2E63), borderRadius: BorderRadius.circular(4 * s)),
+              ),
+            ),
+        ]),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = uiScale(context);
@@ -404,6 +425,7 @@ class _AddContentScreenState extends State<AddContentScreen> {
       body: ListView(
         padding: EdgeInsets.fromLTRB(12 * s, 4 * s, 12 * s, 24 * s),
         children: [
+          _stepBar(s, (hasText && _error.isEmpty && _rows.isNotEmpty) ? 3 : (hasText ? 2 : 1)),
           if (isPhone(context))
             _card(
               s,

@@ -161,6 +161,37 @@ class _ChapterScreenState extends State<ChapterScreen> {
     );
   }
 
+  Widget _header(double s, int stepCount) {
+    final pct = (_overall.clamp(0.0, 1.0) * 100).round();
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 12 * s),
+      padding: EdgeInsets.symmetric(horizontal: 16 * s, vertical: 10 * s),
+      decoration: BoxDecoration(color: const Color(0xFF181B3A), borderRadius: BorderRadius.circular(22 * s)),
+      child: Row(children: [
+        SizedBox(
+          width: 56 * s,
+          height: 56 * s,
+          child: Stack(alignment: Alignment.center, children: [
+            SizedBox(
+              width: 56 * s,
+              height: 56 * s,
+              child: CircularProgressIndicator(value: _overall.clamp(0.0, 1.0).toDouble(), strokeWidth: 7 * s, color: const Color(0xFF35D0BA), backgroundColor: const Color(0xFF2A2E63)),
+            ),
+            Text('$pct%', style: kidText(14 * s)),
+          ]),
+        ),
+        SizedBox(width: 14 * s),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (widget.trail.isNotEmpty) Text(widget.trail, style: kidText(13 * s, w: FontWeight.w600, c: const Color(0xFFA9ADDB))),
+            Text(widget.title, style: kidText(20 * s), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(_words.isEmpty ? '$stepCount steps' : '$pct% of the words learned  \u2022  $stepCount steps', style: kidText(13 * s, w: FontWeight.w600)),
+          ]),
+        ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = uiScale(context);
@@ -202,9 +233,17 @@ class _ChapterScreenState extends State<ChapterScreen> {
     return ScreenFrame(
       title: '\u{1F4D8} ${widget.title}',
       body: Column(children: [
-        if (widget.trail.isNotEmpty) Text(widget.trail, style: kidText(16 * s, w: FontWeight.w600)),
+        _header(s, steps.length),
         SizedBox(height: 10 * s),
         Expanded(child: body),
+        Padding(
+          padding: EdgeInsets.only(top: 6 * s),
+          child: Text(
+            'Do the steps in order, or pick any. Wrong answers come back so you can learn them.',
+            textAlign: TextAlign.center,
+            style: kidText(13 * s, w: FontWeight.w600, c: const Color(0xFFA9ADDB)),
+          ),
+        ),
       ]),
     );
   }
