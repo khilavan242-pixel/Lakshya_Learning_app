@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'add_content.dart';
 import 'chapter_screen.dart';
+import 'content_screen.dart';
 import 'continue_shelf.dart';
 import 'doc_store.dart';
 import 'kids_ui.dart';
@@ -295,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Row(children: [
                     chipBtn(Icons.add_circle_rounded, 'Add', const Color(0xFFF59E0B), () => _go(const AddContentScreen())),
                     SizedBox(width: 8 * s),
-                    chipBtn(Icons.folder_open_rounded, 'Organize', const Color(0xFF8E24AA), () => _go(const LibraryManagerScreen())),
+                    chipBtn(Icons.folder_open_rounded, 'Content', const Color(0xFF8E24AA), () => _go(const ContentScreen())),
                     SizedBox(width: 8 * s),
                     chipBtn(Icons.lock_rounded, 'Parent', const Color(0xFF5C6BC0), () => _go(const ParentZoneScreen())),
                     SizedBox(width: 8 * s),
