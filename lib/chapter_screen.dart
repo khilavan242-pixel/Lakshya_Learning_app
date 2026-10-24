@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'app_store.dart';
 import 'core_audio_models.dart';
+import 'flashcards.dart';
 import 'kids_ui.dart';
 import 'learn_model.dart';
 import 'library.dart';
@@ -69,6 +70,11 @@ class _ChapterScreenState extends State<ChapterScreen> {
 
   Future<void> _read() async {
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => LearnGridScreen(set: LearnSet(widget.title, '\u{1F4D8}', _cards))));
+  }
+
+  Future<void> _flash() async {
+    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => FlashcardsScreen(title: widget.title, cards: FlashcardsScreen.usable(_cards))));
+    if (mounted) setState(() {});
   }
 
   Future<void> _playWords() async {
@@ -204,6 +210,11 @@ class _ChapterScreenState extends State<ChapterScreen> {
       n++;
       steps.add(_step(s, n: n, title: 'Read', text: '${_cards.length} study cards with answers.', progress: 0, button: 'Open', color: const Color(0xFF4C7BF0), onTap: _read, first: steps.isEmpty));
     }
+    final flashCount = FlashcardsScreen.usable(_cards).length;
+    if (flashCount > 0) {
+      n++;
+      steps.add(_step(s, n: n, title: 'Flashcards', text: '$flashCount cards. Flip, then say if you knew it.', progress: 0, button: 'Start', color: const Color(0xFF9C7BFF), onTap: _flash, first: steps.isEmpty));
+    }
     if (_words.isNotEmpty) {
       n++;
       final done = Mastery.masteredIn<WordCard>(_words, _wk);
@@ -224,10 +235,13 @@ class _ChapterScreenState extends State<ChapterScreen> {
         : phone
             ? ListView.separated(padding: EdgeInsets.all(12 * s), itemCount: steps.length, separatorBuilder: (_, __) => SizedBox(height: 14 * s), itemBuilder: (_, int i) => steps[i])
             : Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [for (final w in steps) Padding(padding: EdgeInsets.symmetric(horizontal: 10 * s), child: SizedBox(width: 250 * s, child: w))],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [for (final w in steps) Padding(padding: EdgeInsets.symmetric(horizontal: 6 * s), child: SizedBox(width: (steps.length > 4 ? 190 : 250) * s, child: w))],
+                  ),
                 ),
               );
     return ScreenFrame(
