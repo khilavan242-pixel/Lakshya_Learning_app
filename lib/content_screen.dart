@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'add_content.dart';
 import 'app_store.dart';
 import 'bin.dart';
+import 'cbse_class1.dart';
 import 'core_audio_models.dart';
 import 'kids_ui.dart';
 import 'library.dart';
@@ -173,6 +174,8 @@ class _ContentScreenState extends State<ContentScreen> {
             _action(s, Icons.add_circle_rounded, 'Add', const Color(0xFFF59E0B), () => _open(const AddContentScreen())),
             SizedBox(width: 8 * s),
             _action(s, Icons.folder_open_rounded, 'Organize', const Color(0xFF8E24AA), () => _open(const LibraryManagerScreen())),
+            SizedBox(width: 8 * s),
+            _action(s, Icons.menu_book_rounded, 'Class 1', const Color(0xFF00897B), () => _open(const CbseSyllabusScreen())),
             SizedBox(width: 8 * s),
             _action(s, Icons.restore_from_trash_rounded, 'Deleted', const Color(0xFF607D8B), () => _open(const BinScreen())),
           ]),
