@@ -108,7 +108,12 @@ class _AddContentScreenState extends State<AddContentScreen> {
     }
     var src = t;
     if (!t.startsWith('{') && !t.startsWith('[') && !t.startsWith('```') && (!_kindForced || _kind == 'quiz')) {
-      final c = OcrQuiz.convert(t);
+      final c0 = OcrQuiz.convert(t);
+      // Only when the page itself shows an answer for every question. The app never guesses answers.
+      final c = (c0 != null && c0.unsure.isEmpty) ? c0 : null;
+      if (c0 != null && c0.unsure.isNotEmpty) {
+        _info = 'This page looks like questions but some answers are not on it, so no quiz was made. Add a line  Ans: b  under each question, or paste quiz JSON.';
+      }
       if (c != null) {
         src = c.json;
         _eff = src;

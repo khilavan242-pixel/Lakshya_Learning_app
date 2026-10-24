@@ -673,7 +673,8 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final widgets = <Widget>[];
     final isTf = q.type == 'tf';
     final hi = Speaker.isHindi(q.question);
-    final cols = isTf ? 2 : (_order.length <= 4 ? 2 : 3);
+    final phone = isPhone(context);
+    final cols = isTf ? 2 : (phone ? 1 : (_order.length <= 4 ? 2 : 3));
     final w = math.min(420.0 * s, (size.width - 88 * s - (cols - 1) * 16 * s) / cols);
     for (var pos = 0; pos < _order.length; pos++) {
       final index = pos;
@@ -712,7 +713,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                   child: Text(optionLetter(pos), style: kidText(16 * s)),
                 ),
               if (!isTf) SizedBox(width: 10 * s),
-              Flexible(child: Text(label, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis, style: kidText(isTf ? 36 * s : 26 * s))),
+              Flexible(child: Text(label, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis, style: kidText(isTf ? 36 * s : (phone ? 22 * s : 26 * s)))),
             ],
           ),
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'app_store.dart';
 import 'core_audio_models.dart';
+import 'doc_store.dart';
 import 'flashcards.dart';
 import 'kids_ui.dart';
 import 'learn_model.dart';
@@ -28,6 +29,8 @@ class _ChapterScreenState extends State<ChapterScreen> {
   List<LearnCard> _cards = <LearnCard>[];
   List<WordCard> _words = <WordCard>[];
   List<QuizSet> _sets = <QuizSet>[];
+  int _tab = 0; // phone: 0 All, 1 Learn, 2 Practice
+  Set<String> _doneIds = <String>{};
 
   @override
   void initState() {
@@ -53,11 +56,14 @@ class _ChapterScreenState extends State<ChapterScreen> {
     final words = topics.isEmpty ? <WordCard>[] : (await CardStore.loadCards()).where((WordCard c) => topics.contains(c.topic)).toList();
     final sets = ids.isEmpty ? <QuizSet>[] : (await QuizStore.loadAll()).where((QuizSet q) => ids.contains(q.id)).toList();
     await Mistakes.load();
+    final kv = await AppKV.open();
+    final savedDone = (kv.getString('cdone_${widget.title}') ?? '').split(',').where((String e) => e.isNotEmpty).toSet();
     if (!mounted) return;
     setState(() {
       _cards = cards;
       _words = words;
       _sets = sets;
+      _doneIds = savedDone;
       _loaded = true;
     });
   }
@@ -213,11 +219,157 @@ class _ChapterScreenState extends State<ChapterScreen> {
     );
   }
 
+  Future<void> _markDone(String id) async {
+    if (_doneIds.contains(id)) return;
+    _doneIds = <String>{..._doneIds, id};
+    final kv = await AppKV.open();
+    await kv.setString('cdone_${widget.title}', _doneIds.join(','));
+  }
+
+  Future<void> _playSet(QuizSet set) async {
+    final list = set.questions.map((QuizQuestion q) => QuizItem(set.id, q)).toList()..shuffle();
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => QuizPlayScreen(title: set.title, emoji: set.emoji, scoreId: set.id, builder: () => list)),
+    );
+  }
+
+  /// Phone chapter page: tabs All / Learn / Practice, a progress line and one row per thing to do.
+  Widget _phoneBuild(double s) {
+    final learn = <_Entry>[];
+    final practice = <_Entry>[];
+    if (_cards.isNotEmpty) {
+      learn.add(_Entry('read', 'Study cards', 'Notes  |  ${_cards.length} cards', Icons.menu_book_rounded, const Color(0xFF4C7BF0), _read));
+    }
+    final flashCount = FlashcardsScreen.usable(_cards).length;
+    if (flashCount > 0) {
+      learn.add(_Entry('flash', 'Flashcards', 'Flip and check  |  $flashCount cards', Icons.style_rounded, const Color(0xFF9C7BFF), _flash));
+    }
+    if (_words.isNotEmpty) {
+      learn.add(_Entry('words', 'Spelling words', 'Spell  |  ${_words.length} words', Icons.spellcheck_rounded, const Color(0xFFFFB84D), _playWords));
+    }
+    if (_sets.isNotEmpty) {
+      final total = _quizTotal;
+      practice.add(_Entry('test', 'Test: ${widget.title}', '${PlayerStore.active.rounds} ques  |  mixed round', Icons.fact_check_rounded, const Color(0xFF35D0BA), _playTest));
+      for (final set in _sets) {
+        practice.add(_Entry('set:${set.id}', set.title, '${set.questions.length} ques', Icons.quiz_rounded, const Color(0xFFF2709C), () => _playSet(set)));
+      }
+      if (total == 0) practice.clear();
+    }
+    final mistakeCount = _chapterMistakes().length;
+    if (mistakeCount > 0) {
+      practice.add(_Entry('mist', 'Mistakes', '$mistakeCount to try again', Icons.edit_note_rounded, const Color(0xFFFF7043), _playMistakes, track: false));
+    }
+    final tracked = <_Entry>[...learn, ...practice].where((_Entry e) => e.track).toList();
+    final doneCount = tracked.where((_Entry e) => _doneIds.contains(e.id)).length;
+    final pct = tracked.isEmpty ? 0 : (doneCount * 100 / tracked.length).round();
+    final shownLearn = _tab == 2 ? <_Entry>[] : learn;
+    final shownPractice = _tab == 1 ? <_Entry>[] : practice;
+
+    Widget row(_Entry e) {
+      final viewed = _doneIds.contains(e.id);
+      return InkWell(
+        borderRadius: BorderRadius.circular(18 * s),
+        onTap: () async {
+          await _markDone(e.id);
+          await e.onTap();
+          if (mounted) setState(() {});
+        },
+        child: Container(
+          margin: EdgeInsets.only(bottom: 10 * s),
+          decoration: BoxDecoration(color: const Color(0xFF181B3A), borderRadius: BorderRadius.circular(18 * s)),
+          child: Row(children: [
+            Container(
+              width: 72 * s,
+              height: 72 * s,
+              decoration: BoxDecoration(color: e.color.withOpacity(0.25), borderRadius: BorderRadius.horizontal(left: Radius.circular(18 * s))),
+              child: Icon(e.icon, color: e.color, size: 34 * s),
+            ),
+            SizedBox(width: 12 * s),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 10 * s),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(e.title, style: kidText(16 * s), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  SizedBox(height: 2 * s),
+                  Row(children: [
+                    Flexible(child: Text(e.sub, style: kidText(12.5 * s, w: FontWeight.w600, c: const Color(0xFFA9ADDB)), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    if (viewed && e.track) Text('  |  Viewed', style: kidText(12.5 * s, w: FontWeight.w700, c: const Color(0xFF35D0BA))),
+                  ]),
+                ]),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 26 * s),
+            SizedBox(width: 6 * s),
+          ]),
+        ),
+      );
+    }
+
+    Widget tab(String label, int i) => Expanded(
+          child: InkWell(
+            onTap: () => setState(() => _tab = i),
+            child: Container(
+              padding: EdgeInsets.symmetric(vertical: 10 * s),
+              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: _tab == i ? const Color(0xFFFF6B6B) : Colors.white12, width: 3))),
+              alignment: Alignment.center,
+              child: Text(label, style: kidText(15 * s, w: FontWeight.w700, c: _tab == i ? Colors.white : Colors.white54)),
+            ),
+          ),
+        );
+
+    return Column(children: [
+      Padding(
+        padding: EdgeInsets.fromLTRB(16 * s, 2 * s, 16 * s, 6 * s),
+        child: Column(children: [
+          Text(widget.title, textAlign: TextAlign.center, style: kidText(22 * s)),
+          SizedBox(height: 4 * s),
+          Text('$doneCount/${tracked.length} Done  |  $pct% Completed', style: kidText(13 * s, w: FontWeight.w600, c: const Color(0xFFA9ADDB))),
+        ]),
+      ),
+      Row(children: [tab('All', 0), tab('Learn (${learn.length})', 1), tab('Practice (${practice.length})', 2)]),
+      Expanded(
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(14 * s, 14 * s, 14 * s, 24 * s),
+          children: [
+            if (_sets.isNotEmpty && _tab != 1)
+              Container(
+                margin: EdgeInsets.only(bottom: 14 * s),
+                padding: EdgeInsets.all(14 * s),
+                decoration: BoxDecoration(color: const Color(0xFF2B2440), borderRadius: BorderRadius.circular(18 * s)),
+                child: Row(children: [
+                  Icon(Icons.track_changes_rounded, color: const Color(0xFFFFB84D), size: 34 * s),
+                  SizedBox(width: 12 * s),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Practice Question Bank', style: kidText(16 * s)),
+                      Text('All $_quizTotal questions of this chapter', style: kidText(12.5 * s, w: FontWeight.w600, c: const Color(0xFFA9ADDB))),
+                    ]),
+                  ),
+                  FilledButton(onPressed: () async {
+                    await _playQuiz();
+                  }, child: const Text('Practice')),
+                ]),
+              ),
+            if (shownLearn.isNotEmpty && _tab == 0) Padding(padding: EdgeInsets.only(bottom: 8 * s), child: Text('Learn', style: kidText(15 * s, c: const Color(0xFFA9ADDB)))),
+            for (final e in shownLearn) row(e),
+            if (shownPractice.isNotEmpty && _tab == 0) Padding(padding: EdgeInsets.only(top: 6 * s, bottom: 8 * s), child: Text('Practice', style: kidText(15 * s, c: const Color(0xFFA9ADDB)))),
+            for (final e in shownPractice) row(e),
+            if (shownLearn.isEmpty && shownPractice.isEmpty) Padding(padding: EdgeInsets.only(top: 40 * s), child: Center(child: Text('Nothing here yet.', style: kidText(16 * s, w: FontWeight.w600)))),
+          ],
+        ),
+      ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = uiScale(context);
     if (!_loaded) {
       return ScreenFrame(title: widget.title, body: const Center(child: CircularProgressIndicator(color: Colors.white)));
+    }
+    if (isPhone(context)) {
+      return ScreenFrame(title: widget.trail.isEmpty ? '\u{1F4D8} Chapter' : widget.trail, body: _phoneBuild(s));
     }
     final steps = <Widget>[];
     var n = 0;
@@ -281,4 +433,16 @@ class _ChapterScreenState extends State<ChapterScreen> {
       ]),
     );
   }
+}
+
+/// One row on the phone chapter page.
+class _Entry {
+  final String id;
+  final String title;
+  final String sub;
+  final IconData icon;
+  final Color color;
+  final Future<void> Function() onTap;
+  final bool track; // counts toward "x/y Done"
+  const _Entry(this.id, this.title, this.sub, this.icon, this.color, this.onTap, {this.track = true});
 }
