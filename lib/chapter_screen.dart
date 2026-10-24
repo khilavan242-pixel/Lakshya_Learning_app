@@ -5,6 +5,7 @@ import 'flashcards.dart';
 import 'kids_ui.dart';
 import 'learn_model.dart';
 import 'library.dart';
+import 'mistakes.dart';
 import 'players.dart';
 import 'quick_learn.dart';
 import 'quiz_game.dart';
@@ -51,6 +52,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
     final ids = widget.items.where((LibItem i) => i.kind == 'quiz').map((LibItem i) => i.id).toSet();
     final words = topics.isEmpty ? <WordCard>[] : (await CardStore.loadCards()).where((WordCard c) => topics.contains(c.topic)).toList();
     final sets = ids.isEmpty ? <QuizSet>[] : (await QuizStore.loadAll()).where((QuizSet q) => ids.contains(q.id)).toList();
+    await Mistakes.load();
     if (!mounted) return;
     setState(() {
       _cards = cards;
@@ -105,6 +107,19 @@ class _ChapterScreenState extends State<ChapterScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute<void>(builder: (_) => QuizPlayScreen(title: '${widget.title} Test', emoji: '\u{1F3C6}', scoreId: 'test:${widget.title}', builder: build)),
+    );
+    if (mounted) setState(() {});
+  }
+
+  List<QuizItem> _chapterMistakes() {
+    final ids = _sets.map((QuizSet q) => q.id).toSet();
+    return <QuizItem>[for (final m in Mistakes.items) if (ids.contains(m.setId)) QuizItem(m.setId, m.q)];
+  }
+
+  Future<void> _playMistakes() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => QuizPlayScreen(title: '${widget.title} mistakes', emoji: '\u{1F4DD}', scoreId: 'mist:${widget.title}', builder: _chapterMistakes)),
     );
     if (mounted) setState(() {});
   }
@@ -228,6 +243,11 @@ class _ChapterScreenState extends State<ChapterScreen> {
       n++;
       const open = true;
       steps.add(_step(s, n: n, title: 'Test', text: open ? 'A mixed round of ${PlayerStore.active.rounds} questions.' : 'Opens when ready.', progress: _overall, button: open ? 'Start Test' : '80% needed', color: open ? const Color(0xFF35D0BA) : const Color(0xFF5A5FA6), onTap: _playTest, locked: !open));
+    }
+    final mistakeCount = _chapterMistakes().length;
+    if (mistakeCount > 0) {
+      n++;
+      steps.add(_step(s, n: n, title: 'Revise', text: '$mistakeCount question${mistakeCount == 1 ? '' : 's'} you missed. Try them again.', progress: 0, button: 'Try again', color: const Color(0xFFFF7043), onTap: _playMistakes, first: steps.isEmpty));
     }
     final phone = isPhone(context);
     final body = steps.isEmpty
