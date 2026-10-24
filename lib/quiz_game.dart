@@ -146,12 +146,12 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
         title: 'Mistakes notebook',
         subtitle: Mistakes.count == 0 ? 'No mistakes yet' : '${Mistakes.count} to try again',
         colors: const <Color>[Color(0xFFFF7043), Color(0xFFFFB74D)],
-        onPressed: () {
+        onPressed: () async {
           if (Mistakes.count == 0) {
             showKidsSnack(context, 'No mistakes to practise. Well done!');
             return;
           }
-          _play('Mistakes notebook', '\u{1F4DD}', 'mistakes', () => <QuizItem>[for (final m in Mistakes.items) QuizItem(m.setId, m.q)]);
+          await _play('Mistakes notebook', '\u{1F4DD}', 'mistakes', () => <QuizItem>[for (final m in Mistakes.items) QuizItem(m.setId, m.q)]);
         },
       ),
       if (sets.isNotEmpty)
