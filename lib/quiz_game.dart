@@ -22,17 +22,23 @@ import 'speech_service.dart';
 class QuizPrefs {
   static bool speak = true;
   static bool shuffle = true;
+  static bool explain = true; // show / read the explanation after an answer
+  static bool slow = false; // longer pause after each answer
 
   static Future<void> load() async {
     final kv = await AppKV.open();
     speak = kv.getBool('quiz_speak') ?? true;
     shuffle = kv.getBool('quiz_shuffle') ?? true;
+    explain = kv.getBool('quiz_explain') ?? true;
+    slow = kv.getBool('quiz_slow') ?? false;
   }
 
   static Future<void> save() async {
     final kv = await AppKV.open();
     await kv.setBool('quiz_speak', speak);
     await kv.setBool('quiz_shuffle', shuffle);
+    await kv.setBool('quiz_explain', explain);
+    await kv.setBool('quiz_slow', slow);
   }
 }
 
@@ -194,6 +200,26 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
           color: const Color(0xFF7E57C2),
           onPressed: () {
             setState(() => QuizPrefs.shuffle = !QuizPrefs.shuffle);
+            QuizPrefs.save();
+          },
+        ),
+        ActionButton(
+          s: s,
+          icon: Icons.lightbulb_rounded,
+          label: QuizPrefs.explain ? 'Explain: ON' : 'Explain: OFF',
+          color: const Color(0xFFFFA726),
+          onPressed: () {
+            setState(() => QuizPrefs.explain = !QuizPrefs.explain);
+            QuizPrefs.save();
+          },
+        ),
+        ActionButton(
+          s: s,
+          icon: Icons.speed_rounded,
+          label: QuizPrefs.slow ? 'Pace: Slow' : 'Pace: Normal',
+          color: const Color(0xFF26A69A),
+          onPressed: () {
+            setState(() => QuizPrefs.slow = !QuizPrefs.slow);
             QuizPrefs.save();
           },
         ),
@@ -390,7 +416,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
 
   void _scheduleNext(int ms) {
     final token = _token;
-    Future<void>.delayed(Duration(milliseconds: ms), () {
+    Future<void>.delayed(Duration(milliseconds: QuizPrefs.slow ? (ms * 1.8).round() : ms), () {
       if (mounted && token == _token) _next();
     });
   }
@@ -401,12 +427,13 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final clean = _firstTry;
     _finishQuestion(clean: clean);
     final remember = clean ? '' : '  Remember: ${_answerText(q)}';
+    final why = QuizPrefs.explain && q.explanation.isNotEmpty;
     setState(() {
       _locked = true;
-      _message = q.explanation.isNotEmpty ? '🎉 ${q.explanation}$remember' : (clean ? '🎉 Correct!' : '👍 Good!$remember');
+      _message = why ? '🎉 ${q.explanation}$remember' : (clean ? '🎉 Correct!' : '👍 Good!$remember');
     });
-    _speakFeedback(q.explanation.isNotEmpty ? q.explanation : (clean ? '' : _answerText(q)));
-    _scheduleNext(q.explanation.isNotEmpty ? 3400 : (clean ? 1200 : 2400));
+    _speakFeedback(why ? q.explanation : (clean ? '' : _answerText(q)));
+    _scheduleNext(why ? 3400 : (clean ? 1200 : 2400));
   }
 
   void _revealAndNext(String shown) {

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_store.dart';
+import 'doc_store.dart';
 import 'chapter_screen.dart';
 import 'journey_screen.dart';
 import 'kids_ui.dart';
@@ -878,6 +879,9 @@ class _LearnScreenState extends State<LearnScreen> {
     super.initState();
     _cards = List<LearnCard>.of(widget.set.cards);
     _resetRows();
+    NotesPrefs.load().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -1349,10 +1353,23 @@ class _LearnScreenState extends State<LearnScreen> {
                 ChoiceChipTV(label: '📖 Show answers', selected: _mode == 0, s: s, onPressed: () => _setMode(0)),
                 ChoiceChipTV(label: '🙈 Hide answers', selected: _mode == 1, s: s, onPressed: () => _setMode(1)),
                 ChoiceChipTV(label: '▶ Auto play', selected: _mode == 2, s: s, onPressed: () => _setMode(2)),
+                ChoiceChipTV(
+                  label: 'Aa ${(NotesPrefs.scale * 100).round()}%',
+                  selected: false,
+                  s: s,
+                  onPressed: () {
+                    setState(() => NotesPrefs.cycle());
+                  },
+                ),
               ],
             ),
             SizedBox(height: 8 * s),
-            Expanded(child: _cardArea(s)),
+            Expanded(
+              child: MediaQuery(
+                data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(NotesPrefs.scale)),
+                child: _cardArea(s),
+              ),
+            ),
             SizedBox(height: 10 * s),
             ButtonRow(
               spacing: 14 * s,
@@ -1382,5 +1399,22 @@ class _LearnScreenState extends State<LearnScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Notes (Read) display settings kept for the whole app: text size of study cards.
+class NotesPrefs {
+  static double scale = 1.0;
+
+  static Future<void> load() async {
+    final kv = await AppKV.open();
+    final v = double.tryParse(kv.getString('notes_scale') ?? '');
+    if (v != null && v >= 0.8 && v <= 2.0) scale = v;
+  }
+
+  /// 100% -> 125% -> 150% -> 100%
+  static void cycle() {
+    scale = scale < 1.1 ? 1.25 : (scale < 1.4 ? 1.5 : 1.0);
+    AppKV.open().then((AppKV kv) => kv.setString('notes_scale', '$scale'));
   }
 }
