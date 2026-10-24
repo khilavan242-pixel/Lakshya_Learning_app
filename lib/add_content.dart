@@ -7,6 +7,7 @@ import 'core_audio_models.dart';
 import 'kids_ui.dart';
 import 'learn_model.dart';
 import 'library.dart';
+import 'ocr_quiz.dart';
 import 'quiz_model.dart';
 import 'tv_link.dart';
 
@@ -105,15 +106,31 @@ class _AddContentScreenState extends State<AddContentScreen> {
       setState(() {});
       return;
     }
-    if (!_kindForced) _kind = _detect(t);
+    var src = t;
+    if (!t.startsWith('{') && !t.startsWith('[') && !t.startsWith('```') && (!_kindForced || _kind == 'quiz')) {
+      final c = OcrQuiz.convert(t);
+      if (c != null) {
+        src = c.json;
+        _eff = src;
+        _kind = 'quiz';
+        final names = c.kinds.entries.map((MapEntry<String, int> e) => '${e.value} ${e.key}').join(', ');
+        _info = 'Made ${c.count} quiz questions from the text ($names).';
+        if (c.unsure.isNotEmpty) {
+          _info += ' No answer found for question ${c.unsure.join(', ')}. Under each of those questions type  Ans: b  (or the answer) and it updates here.';
+        }
+      }
+    }
+    if (!_kindForced && src == t) _kind = _detect(t);
     try {
       if (_kind == 'quiz') {
-        for (final set in QuizParser.parse(t)) {
+        for (final set in QuizParser.parse(src)) {
           for (final q in set.questions) {
             final dup = _knownQuestions.contains(_n(q.question));
             if (dup) _dups++;
             final ans = q.options.isNotEmpty && q.correctIndex >= 0 && q.correctIndex < q.options.length ? q.options[q.correctIndex] : (q.answers.isNotEmpty ? q.answers.first : '');
-            _rows.add(_Row(q.question, ans.isEmpty ? '' : 'Answer: $ans', dup));
+            final label = q.type == 'match' ? 'Match the following (${q.pairs.length} pairs)' : (q.type == 'tf' ? 'True or false' : (q.type == 'fill' ? 'Fill in the blank' : (q.type == 'short' ? 'Short answer' : (q.question.startsWith('Assertion') || q.question.contains('Assertion (A)') ? 'Assertion and reason' : 'Multiple choice'))));
+            final tag = q.passage.isNotEmpty ? '$label, with passage' : label;
+            _rows.add(_Row(q.question, ans.isEmpty ? tag : '$tag  \u2022  Answer: $ans', dup));
           }
         }
       } else if (_kind == 'words') {
@@ -185,42 +202,61 @@ class _AddContentScreenState extends State<AddContentScreen> {
   /// Takes a photo (or picks one) of a book page and reads the text on it. The text lands in the
   /// paste box so it can be corrected before it is saved.
   Future<void> _scan(ImageSource src) async {
-    XFile? f;
+    List<XFile> files = <XFile>[];
     try {
-      f = await ImagePicker().pickImage(source: src, imageQuality: 92);
+      if (src == ImageSource.gallery) {
+        files = await ImagePicker().pickMultiImage(imageQuality: 92);
+      } else {
+        final f = await ImagePicker().pickImage(source: src, imageQuality: 92);
+        if (f != null) files = <XFile>[f];
+      }
     } catch (e) {
       setState(() => _error = 'Could not open the camera or gallery.');
       return;
     }
-    if (f == null) return;
+    if (files.isEmpty) return;
     setState(() {
       _busy = true;
       _error = '';
-      _done = 'Reading the page...';
+      _done = 'Reading ${files.length} page${files.length == 1 ? '' : 's'}...';
     });
     final rec = TextRecognizer(script: _hindi ? TextRecognitionScript.devanagiri : TextRecognitionScript.latin);
+    var total = 0;
+    var failed = 0;
+    final pages = <String>[];
     try {
-      final r = await rec.processImage(InputImage.fromFilePath(f.path));
-      final lines = <String>[];
-      for (final b in r.blocks) {
-        for (final l in b.lines) {
-          final t = l.text.replaceFirst(RegExp(r'^[\u2022\u00B7*\-\s]+'), '').trim();
-          if (t.isNotEmpty) lines.add(t);
+      for (var i = 0; i < files.length; i++) {
+        if (mounted) setState(() => _done = 'Reading page ${i + 1} of ${files.length}...');
+        try {
+          final r = await rec.processImage(InputImage.fromFilePath(files[i].path));
+          final lines = <String>[];
+          for (final b in r.blocks) {
+            for (final l in b.lines) {
+              final t = l.text.replaceFirst(RegExp(r'^[\u2022\u00B7*\-\s]+(?![\d]+[.)])'), '').trim();
+              if (t.isNotEmpty) lines.add(t);
+            }
+          }
+          if (lines.isEmpty) {
+            failed++;
+          } else {
+            total += lines.length;
+            pages.add(lines.join('\n'));
+          }
+        } catch (e) {
+          failed++;
         }
       }
-      if (lines.isEmpty) {
-        _error = 'No text found. Try again with more light and the page flat.';
+      if (pages.isEmpty) {
+        _error = _hindi ? 'Could not read Hindi text on this phone. Try English or type it.' : 'No text found. Try again with more light and the page flat.';
         _done = '';
       } else {
         final old = _text.text.trim();
-        _text.text = old.isEmpty ? lines.join('\n') : '$old\n${lines.join('\n')}';
+        final joined = pages.join('\n');
+        _text.text = old.isEmpty ? joined : '$old\n$joined';
         _kindForced = false;
-        _done = 'Read ${lines.length} lines. Check the text below and fix any mistakes.';
+        _done = 'Read $total lines from ${pages.length} page${pages.length == 1 ? '' : 's'}.${failed > 0 ? ' $failed page${failed == 1 ? '' : 's'} could not be read.' : ''} Check the text below and fix any mistakes.';
         _check();
       }
-    } catch (e) {
-      _error = _hindi ? 'Could not read Hindi text on this phone. Try English or type it.' : 'Could not read the page.';
-      _done = '';
     } finally {
       rec.close();
     }
@@ -441,7 +477,7 @@ class _AddContentScreenState extends State<AddContentScreen> {
                 Row(children: [
                   Expanded(child: FilledButton.icon(onPressed: _busy ? null : () => _scan(ImageSource.camera), icon: const Icon(Icons.photo_camera_rounded), label: const Text('Camera'))),
                   SizedBox(width: 10 * s),
-                  Expanded(child: OutlinedButton.icon(onPressed: _busy ? null : () => _scan(ImageSource.gallery), icon: const Icon(Icons.photo_library_rounded), label: const Text('Gallery'))),
+                  Expanded(child: OutlinedButton.icon(onPressed: _busy ? null : () => _scan(ImageSource.gallery), icon: const Icon(Icons.photo_library_rounded), label: const Text('Gallery (many)'))),
                 ]),
               ]),
             ),
