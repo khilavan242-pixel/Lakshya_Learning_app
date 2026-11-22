@@ -9,6 +9,7 @@ import 'kids_ui.dart';
 import 'library.dart';
 import 'mistakes.dart';
 import 'phone_manager.dart';
+import 'picture_maker.dart';
 import 'picture_pack.dart';
 import 'players.dart';
 import 'quick_learn.dart';
@@ -225,6 +226,16 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
           onPressed: () {
             setState(() => QuizPrefs.slow = !QuizPrefs.slow);
             QuizPrefs.save();
+          },
+        ),
+        ActionButton(
+          s: s,
+          icon: Icons.add_photo_alternate_rounded,
+          label: 'My Pictures',
+          color: const Color(0xFF7E57C2),
+          onPressed: () async {
+            await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const PictureMakerScreen()));
+            await reload();
           },
         ),
         ActionButton(
