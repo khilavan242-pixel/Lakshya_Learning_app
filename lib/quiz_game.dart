@@ -105,6 +105,8 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
   Future<List<LibItem>> _loadItems() async {
     await QuizPrefs.load();
     await Mistakes.load();
+    await Library.load();
+    if (!Library.meta.containsKey('__pics')) await PicturePack.install();
     final all = await QuizStore.loadAll();
     await Library.syncQuizzes(all);
     final allowed = PlayerStore.active.quizIds;

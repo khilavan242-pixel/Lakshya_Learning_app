@@ -90,8 +90,8 @@ class PicturePack {
       emoji: t.$3,
       lang: 'en',
       questions: qs,
-      cls: '',
-      subject: 'Picture Quiz',
+      cls: 'Picture Quizzes',
+      subject: t.$2,
     );
   }
 
@@ -104,6 +104,7 @@ class PicturePack {
       await QuizStore.save(set);
       n++;
     }
+    Library.meta['__pics'] = <String, String>{'at': '1'};
     await Library.save();
     return n;
   }
