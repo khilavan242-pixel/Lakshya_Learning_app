@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'kids_ui.dart';
 import 'library.dart';
 import 'mistakes.dart';
 import 'phone_manager.dart';
+import 'picture_pack.dart';
 import 'players.dart';
 import 'quick_learn.dart';
 import 'quiz_model.dart';
@@ -221,6 +223,18 @@ class _QuizHomeScreenState extends State<QuizHomeScreen> {
           onPressed: () {
             setState(() => QuizPrefs.slow = !QuizPrefs.slow);
             QuizPrefs.save();
+          },
+        ),
+        ActionButton(
+          s: s,
+          icon: Icons.image_rounded,
+          label: 'Picture Quizzes',
+          color: const Color(0xFFEC407A),
+          onPressed: () async {
+            final n = await PicturePack.install();
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$n picture quizzes added: Flags, Space, Instruments, Logos')));
+            await reload();
           },
         ),
         ActionButton(
@@ -656,14 +670,48 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   }
 
   // ------------------------------------------------------ UI pieces
+  Widget _questionPicture(double s) {
+    final img = _q.image;
+    if (img.isEmpty) return const SizedBox.shrink();
+    final phone = isPhone(context);
+    final h = (phone ? 190.0 : 210.0 * s).toDouble();
+    Widget err(BuildContext c, Object e, StackTrace? st) => Icon(Icons.image_not_supported_rounded, size: 48 * s, color: Colors.white54);
+    final pic = img.startsWith('assets/')
+        ? Image.asset(img, fit: BoxFit.contain, errorBuilder: err)
+        : Image.file(File(img), fit: BoxFit.contain, errorBuilder: err);
+    return Padding(
+      padding: EdgeInsets.only(top: 4 * s, bottom: 6 * s),
+      child: SizedBox(height: h, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: pic)),
+    );
+  }
+
   Widget _questionText(double s) {
-    final text = _q.question;
+    final text = _q.shown;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 6 * s),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: kidText(text.length > 70 ? 24 * s : (text.length > 35 ? 30 * s : 38 * s)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _questionPicture(s),
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: kidText(text.length > 70 ? 24 * s : (text.length > 35 ? 30 * s : 38 * s)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniButton(IconData icon, Color color, VoidCallback onTap, String tip) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: IconButton.filled(
+        tooltip: tip,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
+        onPressed: onTap,
+        icon: Icon(icon),
       ),
     );
   }
@@ -948,7 +996,13 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
       onKeyEvent: _handleKey,
       child: ScreenFrame(
         title: title,
-        actions: [
+        actions: isPhone(context)
+            ? [
+                Text('${_i + 1}/${_items.length} ⭐$_correct', style: kidText(18)),
+                if (q.isChoice && PlayerStore.active.hints) _miniButton(Icons.lightbulb_rounded, const Color(0xFFF59E0B), _hintChoice, 'Hint'),
+                _miniButton(Icons.volume_up_rounded, const Color(0xFF00ACC1), _say, 'Say'),
+              ]
+            : [
           Text('${_i + 1}/${_items.length}  ⭐$_correct', style: kidText(24 * s)),
           SizedBox(width: 12 * s),
           if (q.isChoice && PlayerStore.active.hints) ActionButton(s: s, icon: Icons.lightbulb_rounded, label: 'Hint', color: const Color(0xFFF59E0B), onPressed: _hintChoice),

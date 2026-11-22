@@ -18,6 +18,7 @@ class QuizQuestion {
   final String hint;
   final String lang; // '', 'en' or 'hi'  ('' = detect from the text)
   final String passage; // case / source based: the text to read before the question
+  final String image; // optional picture: 'assets/...' (bundled) or a file path
 
   const QuizQuestion({
     required this.type,
@@ -30,6 +31,7 @@ class QuizQuestion {
     this.hint = '',
     this.lang = '',
     this.passage = '',
+    this.image = '',
   });
 
   /// The same question with a passage attached (case / source based questions).
@@ -44,6 +46,22 @@ class QuizQuestion {
         hint: hint,
         lang: lang,
         passage: p,
+        image: image,
+      );
+
+  /// The same question with a picture attached.
+  QuizQuestion withImage(String img) => QuizQuestion(
+        type: type,
+        question: question,
+        options: options,
+        correctIndex: correctIndex,
+        answers: answers,
+        pairs: pairs,
+        explanation: explanation,
+        hint: hint,
+        lang: lang,
+        passage: passage,
+        image: img,
       );
 
   /// Text shown on screen: the passage (if any) and then the question.
@@ -64,6 +82,7 @@ class QuizQuestion {
       'hint': hint,
       'lang': lang,
       'passage': passage,
+      'image': image,
     };
   }
 
@@ -87,6 +106,7 @@ class QuizQuestion {
       hint: (m['hint'] ?? '').toString(),
       lang: (m['lang'] ?? '').toString(),
       passage: (m['passage'] ?? '').toString(),
+      image: (m['image'] ?? '').toString(),
     );
   }
 }
@@ -309,8 +329,11 @@ class QuizParser {
       final o = m['options'];
       if (o is! List || o.length < 2) m['options'] = _assertOptions;
     }
-    final q = _buildCore(m, setLang);
-    return passage.isEmpty ? q : q.withPassage(passage);
+    final img = _str(_first(m, ['image', 'picture', 'img', 'photo']));
+    var q = _buildCore(m, setLang);
+    if (passage.isNotEmpty) q = q.withPassage(passage);
+    if (img.isNotEmpty) q = q.withImage(img);
+    return q;
   }
 
   static QuizQuestion _buildCore(Map<String, dynamic> m, String setLang) {

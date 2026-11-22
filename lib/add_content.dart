@@ -268,6 +268,67 @@ class _AddContentScreenState extends State<AddContentScreen> {
     if (mounted) setState(() => _busy = false);
   }
 
+  static const Map<String, String> _templates = <String, String>{
+    'Synonyms': '# Synonyms (same meaning)\nbig = large\nhappy = glad\nquick = fast\nbegin = start\n',
+    'Antonyms': '# Antonyms (opposites)\nhot = cold\nup = down\nearly = late\nstrong = weak\n',
+    'Homophones': '# Homophones\nsee = sea\nno = know\nwrite = right\nsun = son\n',
+    'Question & answer': '# Questions\nQ: Which animal gives us milk?\nA: Cow\nQ: How many days in a week?\nA: 7\n',
+    'Fill the blank': '# Fill in the blanks\nThe sun rises in the [east].\nA [triangle] has three sides.\n',
+    '4 options': '# Quick quiz\nQ: Capital of India?\na) Mumbai\nb) Delhi *\nc) Kolkata\nd) Chennai\n',
+  };
+
+  void _useTemplate(String text) {
+    _text.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+    _kindForced = false;
+    _check();
+  }
+
+  void _afterEdit() {
+    _kindForced = false;
+    _check();
+  }
+
+  /// Wraps the selected word(s) in [ ] so only that part is hidden / is the answer.
+  void _markSelected() {
+    final v = _text.value;
+    final sel = v.selection;
+    if (!sel.isValid || sel.isCollapsed) {
+      setState(() => _error = 'Select a word in the box first, then press this button.');
+      return;
+    }
+    final t = v.text;
+    final picked = t.substring(sel.start, sel.end);
+    final nt = '${t.substring(0, sel.start)}[$picked]${t.substring(sel.end)}';
+    _text.value = TextEditingValue(text: nt, selection: TextSelection.collapsed(offset: sel.end + 2));
+    _afterEdit();
+  }
+
+  /// Puts * at the end of the line the cursor is on (marks the right option).
+  void _starLine() {
+    final v = _text.value;
+    final t = v.text;
+    var pos = v.selection.isValid ? v.selection.end : t.length;
+    if (pos > t.length) pos = t.length;
+    final ls = pos == 0 ? 0 : t.lastIndexOf('\n', pos - 1) + 1;
+    var le = t.indexOf('\n', pos);
+    if (le < 0) le = t.length;
+    final line = t.substring(ls, le).trimRight();
+    if (line.isEmpty || line.endsWith('*')) return;
+    final nt = '${t.substring(0, ls)}$line *${t.substring(le)}';
+    _text.value = TextEditingValue(text: nt, selection: TextSelection.collapsed(offset: ls + line.length + 2));
+    _afterEdit();
+  }
+
+  void _insertEquals() {
+    final v = _text.value;
+    final t = v.text;
+    final a = v.selection.isValid ? v.selection.start : t.length;
+    final b = v.selection.isValid ? v.selection.end : t.length;
+    final nt = '${t.substring(0, a)} = ${t.substring(b)}';
+    _text.value = TextEditingValue(text: nt, selection: TextSelection.collapsed(offset: a + 3));
+    _afterEdit();
+  }
+
   Future<void> _paste() async {
     final d = await Clipboard.getData('text/plain');
     final t = d?.text ?? '';
@@ -490,6 +551,12 @@ class _AddContentScreenState extends State<AddContentScreen> {
             s,
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _label(s, 'Step 1: paste'),
+              Text('Start from a ready-made example:', style: kidText(16 * s)),
+              SizedBox(height: 6 * s),
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                for (final e in _templates.entries) OutlinedButton(onPressed: () => _useTemplate(e.value), child: Text(e.key)),
+              ]),
+              SizedBox(height: 10 * s),
               TextField(
                 controller: _text,
                 minLines: 5,
@@ -501,7 +568,14 @@ class _AddContentScreenState extends State<AddContentScreen> {
                 decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Paste quiz JSON, a word list, or notes like  Sun => A star'),
               ),
               SizedBox(height: 8 * s),
-              OutlinedButton.icon(onPressed: _paste, icon: const Icon(Icons.content_paste_rounded), label: const Text('Paste from clipboard')),
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                FilledButton.icon(onPressed: _markSelected, icon: const Icon(Icons.auto_awesome_rounded), label: const Text('Mark selected as answer')),
+                FilledButton.tonalIcon(onPressed: _starLine, icon: const Icon(Icons.star_rounded), label: const Text('Right option (this line)')),
+                FilledButton.tonal(onPressed: _insertEquals, child: const Text(' = ')),
+                OutlinedButton.icon(onPressed: _paste, icon: const Icon(Icons.content_paste_rounded), label: const Text('Paste from clipboard')),
+              ]),
+              SizedBox(height: 6 * s),
+              Text('Pairs: word = answer. Select a word and press Mark to hide just that word. For options put * after the right one.', style: kidText(14 * s)),
             ]),
           ),
           if (hasText && _error.isEmpty && _rows.isNotEmpty) ...[
